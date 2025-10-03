@@ -55,7 +55,7 @@ class FreeformWindow(
     var defaultDisplayRotation = context.display.rotation
     private val hangUpGestureListener = HangUpGestureListener(this)
     private val defaultDisplayInfo = DisplayInfo()
-    private val destroyRunnable = Runnable { destroy("destroyRunnable") }
+    private val destroyRunnable = Runnable { destroy("destroyRunnable", true) }
     
     private lateinit var appPackageName: String
     private var appIcon: Drawable? = null
@@ -460,7 +460,7 @@ class FreeformWindow(
             handler.postDelayed(destroyRunnable, WINDOW_DESTROY_WAIT_MS)
     }
 
-    fun destroy(callReason: String) {
+    fun destroy(callReason: String, shouldRemoveTask: Boolean = false) {
         Slog.i(TAG, "destroy ${getFreeformId()}, displayId=$displayId callReason: $callReason")
         removeView(false)
         handler.removeCallbacks(destroyRunnable)
@@ -469,6 +469,12 @@ class FreeformWindow(
         LMOFreeformServiceHolder.releaseFreeform(this)
         FreeformWindowManager.removeWindow(getFreeformId())
         windowManagerInt.unregisterDisplaySecureContentListener(this)
+        freeformTaskStackListener!!.taskId.let {
+            if (it != -1 && shouldRemoveTask) {
+                Slog.i(TAG, "destroy: remove taskId $it again")
+                runCatching { SystemServiceHolder.activityTaskManager.removeTask(it) }
+            }
+        }
     }
     
     private fun extractPackageInfo() {
