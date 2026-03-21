@@ -9,4 +9,27 @@
     <string name="sidebar_settings_description">Open sidebar settings</string>
     <string name="sidebar_predicted_apps">Show app suggestions</string>
     <string name="sidebar_predicted_apps_summary">Show upto 6 suggested apps below pinned apps</string>
+    <string name="smart_clipboard_label">Smart Clipboard</string>
+    <string name="smart_clipboard_receiver_label">Sidebar</string>
+    <string name="smart_clipboard_summary">Keep copied, shared, and dropped text or images in Sidebar for quick reuse</string>
+    <string name="smart_clipboard_expiration_label">Keep clips for</string>
+    <string name="smart_clipboard_expiration_1_hour">1 hour</string>
+    <string name="smart_clipboard_expiration_1_day">1 day</string>
+    <string name="smart_clipboard_expiration_1_week">1 week</string>
+    <string name="smart_clipboard_expiration_forever">Forever</string>
+    <string name="smart_clipboard_empty">Copy, share, or drag text and images here to keep them in Sidebar.</string>
+    <string name="smart_clipboard_image">Image</string>
+    <string name="smart_clipboard_copy">Copy again</string>
+    <string name="smart_clipboard_share">Share</string>
+    <string name="smart_clipboard_delete">Delete</string>
+    <string name="smart_clipboard_copy_description">Copy clipboard item again</string>
+    <string name="smart_clipboard_share_description">Share clipboard item</string>
+    <string name="smart_clipboard_delete_description">Delete clipboard item</string>
+    <string name="smart_clipboard_pin_description">Pin clipboard item</string>
+    <string name="smart_clipboard_image_description">Clipboard image preview</string>
+    <string name="smart_clipboard_text_description">Clipboard text item</string>
+    <string name="smart_clipboard_file_description">Clipboard file item</string>
+    <string name="smart_clipboard_saved">Saved to Smart Clipboard</string>
+    <string name="smart_clipboard_unsupported">Unsupported content type</string>
+    <string name="smart_clipboard_file_too_large">File is too large to save (Max 100MB)</string>
 </resources>

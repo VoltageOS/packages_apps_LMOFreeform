@@ -13,6 +13,7 @@
     <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL"/>
     <uses-permission android:name="android.permission.ACCESS_HIDDEN_PROFILES"/>
     <uses-permission android:name="android.permission.ACCESS_HIDDEN_PROFILES_FULL"/>
+    <uses-permission android:name="android.permission.READ_CLIPBOARD_IN_BACKGROUND"/>
 
     <application
         android:name=".app.SidebarApplication"
@@ -42,7 +43,43 @@
             android:exported="true"
             android:excludeFromRecents="true"/>
 
+        <activity
+            android:name=".ui.sidebar.SmartClipboardShareActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/smart_clipboard_receiver_label"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
         <service android:name=".service.SidebarService"/>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.libremobileos.sidebar.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/sidebar_file_paths" />
+        </provider>
 
         <receiver
             android:name=".receiver.BootReceiver"

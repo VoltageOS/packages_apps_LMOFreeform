@@ -19,7 +19,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.libremobileos.sidebar.app.SidebarApplication
 import com.libremobileos.sidebar.bean.SidebarAppInfo
 import com.libremobileos.sidebar.room.DatabaseRepository
+import com.libremobileos.sidebar.service.ServiceViewModel.Companion.KEY_SMART_CLIPBOARD
 import com.libremobileos.sidebar.service.ServiceViewModel.Companion.KEY_SHOW_PREDICTED_APPS
+import com.libremobileos.sidebar.service.ServiceViewModel.Companion.KEY_CLIPBOARD_EXPIRATION_HOURS
 import com.libremobileos.sidebar.service.SidebarService
 import com.libremobileos.sidebar.utils.Logger
 import com.libremobileos.sidebar.utils.contains
@@ -110,6 +112,24 @@ class SidebarSettingsViewModel(private val application: Application) : AndroidVi
         sp.edit()
             .putBoolean(KEY_SHOW_PREDICTED_APPS, enabled)
             .apply()
+
+    fun getSmartClipboardEnabled(): Boolean =
+        sp.getBoolean(KEY_SMART_CLIPBOARD, false)
+
+    fun setSmartClipboardEnabled(enabled: Boolean) {
+        sp.edit()
+            .putBoolean(KEY_SMART_CLIPBOARD, enabled)
+            .apply()
+    }
+
+    fun getClipboardExpirationHours(): Int =
+        sp.getInt(KEY_CLIPBOARD_EXPIRATION_HOURS, 0)
+
+    fun setClipboardExpirationHours(hours: Int) {
+        sp.edit()
+            .putInt(KEY_CLIPBOARD_EXPIRATION_HOURS, hours)
+            .apply()
+    }
 
     private fun initAllAppList() {
         viewModelScope.launch(Dispatchers.IO) {

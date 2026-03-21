@@ -13,6 +13,7 @@ import java.lang.Exception
 class DatabaseRepository(context: Context) {
 
     private val sidebarAppsDao: SidebarAppsDao
+    private val smartClipboardDao: SmartClipboardDao
 
     fun insertSidebarApp(packageName: String, activityName: String, userId: Int) {
         try {
@@ -56,8 +57,49 @@ class DatabaseRepository(context: Context) {
         sidebarAppsDao.deleteList(sidebarAppsEntityList)
     }
 
+    fun insertSmartClipboardItem(entity: SmartClipboardEntity): Long {
+        return smartClipboardDao.insert(entity)
+    }
+
+    fun getRecentSmartClipboardItemsByFlow(limit: Int): Flow<List<SmartClipboardEntity>> {
+        return smartClipboardDao.getRecentByFlow(limit)
+    }
+
+    fun getRecentSmartClipboardItems(limit: Int): List<SmartClipboardEntity> {
+        return smartClipboardDao.getRecent(limit)
+    }
+
+    fun getLatestSmartClipboardItem(): SmartClipboardEntity? {
+        return smartClipboardDao.getLatest()
+    }
+
+    fun getRecentHashes(limit: Int): List<String> {
+        return smartClipboardDao.getRecentHashes(limit)
+    }
+
+    fun deleteSmartClipboardItem(id: Long) {
+        smartClipboardDao.deleteById(id)
+    }
+
+    fun deleteAllSmartClipboardItems() {
+        smartClipboardDao.deleteAll()
+    }
+
+    fun setSmartClipboardItemPinned(id: Long, isPinned: Boolean) {
+        smartClipboardDao.setPinned(id, isPinned)
+    }
+
+    fun trimSmartClipboardHistory(limit: Int) {
+        smartClipboardDao.trimTo(limit)
+    }
+
+    fun deleteExpiredSmartClipboardItems(expirationTimestamp: Long) {
+        smartClipboardDao.deleteExpired(expirationTimestamp)
+    }
+
     init {
         val database = getDatabase(context)
         sidebarAppsDao = database.sidebarAppsDao
+        smartClipboardDao = database.smartClipboardDao
     }
 }

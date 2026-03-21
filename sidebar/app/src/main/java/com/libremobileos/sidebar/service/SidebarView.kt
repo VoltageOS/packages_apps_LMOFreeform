@@ -7,10 +7,12 @@ import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.UserHandle
+import android.view.DragEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.WindowManager.LayoutParams
+import android.widget.Toast
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.Modifier
@@ -22,6 +24,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.libremobileos.sidebar.R
 import com.libremobileos.sidebar.app.SidebarApplication
 import com.libremobileos.sidebar.bean.AppInfo
 import com.libremobileos.sidebar.ui.theme.SidebarTheme
@@ -109,6 +112,29 @@ class SidebarView(
                 true
             }
             false
+        }
+        composeView.setOnDragListener { _, event ->
+            when (event.action) {
+                DragEvent.ACTION_DRAG_STARTED -> {
+                    viewModel.supportsSmartClipboardContent(event.clipDescription)
+                }
+                DragEvent.ACTION_DROP -> {
+                    if (!viewModel.supportsSmartClipboardContent(event.clipDescription)) {
+                        return@setOnDragListener false
+                    }
+                    viewModel.addClipDataToSmartClipboard(
+                        clipData = event.clipData,
+                        enableIfNeeded = true,
+                        showToast = true
+                    )
+                    true
+                }
+                DragEvent.ACTION_DRAG_ENTERED,
+                DragEvent.ACTION_DRAG_LOCATION,
+                DragEvent.ACTION_DRAG_EXITED,
+                DragEvent.ACTION_DRAG_ENDED -> true
+                else -> false
+            }
         }
 
         handler.post {
