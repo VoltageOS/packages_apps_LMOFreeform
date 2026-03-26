@@ -2,6 +2,7 @@ package com.libremobileos.freeform.server.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Matrix
 import android.graphics.drawable.Drawable
 import android.graphics.PixelFormat
 import android.graphics.SurfaceTexture
@@ -11,6 +12,7 @@ import android.util.Slog
 import android.view.Display
 import android.view.DisplayInfo
 import android.view.GestureDetector
+import android.view.InputDevice
 import android.view.IRotationWatcher
 import android.view.MotionEvent
 import android.view.Surface
@@ -203,39 +205,23 @@ class FreeformWindow(
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(view: View, event: MotionEvent): Boolean {
-        val pointerCoords: Array<MotionEvent.PointerCoords?> = arrayOfNulls(event.pointerCount)
-        val pointerProperties: Array<MotionEvent.PointerProperties?> = arrayOfNulls(event.pointerCount)
-        for (i in 0 until event.pointerCount) {
-            val oldCoords = MotionEvent.PointerCoords()
-            val pointerProperty = MotionEvent.PointerProperties()
-            event.getPointerCoords(i, oldCoords)
-            event.getPointerProperties(i, pointerProperty)
-            pointerCoords[i] = oldCoords
-            pointerCoords[i]!!.apply {
-                x = oldCoords.x * freeformConfig.scale
-                y = oldCoords.y * freeformConfig.scale
-            }
-            pointerProperties[i] = pointerProperty
+        if (displayId == Display.INVALID_DISPLAY) {
+            return true
         }
 
-        val newEvent = MotionEvent.obtain(
-            event.downTime,
-            event.eventTime,
-            event.action,
-            event.pointerCount,
-            pointerProperties,
-            pointerCoords,
-            event.metaState,
-            event.buttonState,
-            event.xPrecision,
-            event.yPrecision,
-            event.deviceId,
-            event.edgeFlags,
-            event.source,
-            event.flags
-        )
-        LMOFreeformServiceHolder.touch(newEvent, displayId)
-        newEvent.recycle()
+        // Copy and transform the original event so we keep batched historical samples.
+        val transformedEvent = MotionEvent.obtain(event)
+        try {
+            if (freeformConfig.scale != 1.0f) {
+                val transform = Matrix()
+                transform.setScale(freeformConfig.scale, freeformConfig.scale)
+                transformedEvent.transform(transform)
+            }
+            transformedEvent.source = InputDevice.SOURCE_TOUCHSCREEN
+            LMOFreeformServiceHolder.touch(transformedEvent, displayId)
+        } finally {
+            transformedEvent.recycle()
+        }
         return true
     }
 
