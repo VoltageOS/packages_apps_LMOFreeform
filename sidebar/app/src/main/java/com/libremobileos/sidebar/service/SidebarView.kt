@@ -8,14 +8,10 @@ import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.UserHandle
 import android.view.DragEvent
-import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.WindowManager.LayoutParams
 import android.widget.Toast
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.Lifecycle
@@ -29,7 +25,6 @@ import com.libremobileos.sidebar.app.SidebarApplication
 import com.libremobileos.sidebar.bean.AppInfo
 import com.libremobileos.sidebar.ui.theme.SidebarTheme
 import com.libremobileos.sidebar.utils.Logger
-import kotlin.math.roundToInt
 
 /**
  * @author KindBrave
@@ -49,7 +44,6 @@ class SidebarView(
 
     private lateinit var composeView: View
     private var sidebarPositionX = 0
-    private var sidebarPositionY = 0
     private var isShowing = false
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val layoutParams = LayoutParams()
@@ -61,7 +55,6 @@ class SidebarView(
     }
 
     companion object {
-        private const val OFFSET_X = 90
         private const val PACKAGE = "com.libremobileos.freeform"
         private const val ACTION = "com.libremobileos.freeform.START_FREEFORM"
         private const val TAG = "SidebarView"
@@ -101,18 +94,13 @@ class SidebarView(
             format = PixelFormat.RGBA_8888
             windowAnimations = android.R.style.Animation_Dialog
             layoutInDisplayCutoutMode = LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
+            flags = LayoutParams.FLAG_NOT_FOCUSABLE or
+                    LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    LayoutParams.FLAG_HARDWARE_ACCELERATED
         }
 
         updateSidebarPosition()
         composeView.translationX = sidebarPositionX * 1.0f * 200
-        composeView.setOnTouchListener { view, event ->
-            logger.d("composeView: $event")
-            if (event.action == MotionEvent.ACTION_UP) {
-                removeView()
-                true
-            }
-            false
-        }
         composeView.setOnDragListener { _, event ->
             when (event.action) {
                 DragEvent.ACTION_DRAG_STARTED -> {
@@ -166,30 +154,17 @@ class SidebarView(
     }
 
     fun updateSidebarPosition() {
-        val screenWidth = context.resources.displayMetrics.widthPixels
-        val screenHeight = context.resources.displayMetrics.heightPixels
-        val sidebarHeight = if (context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
-            screenHeight / 3
-        } else {
-            (screenHeight * 0.8f).roundToInt()
-        }
 
         sidebarPositionX = sharedPrefs.getInt(SidebarService.SIDELINE_POSITION_X, 1)
-        sidebarPositionY = if (context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
-            sharedPrefs.getInt(SidebarService.SIDELINE_POSITION_Y_PORTRAIT, -screenHeight / 6)
-        } else {
-            0
-        }
 
         layoutParams.apply {
-            width = LayoutParams.WRAP_CONTENT
-            height = sidebarHeight
-            x = sidebarPositionX * (screenWidth / 2 - OFFSET_X)
-            y = sidebarPositionY
+            width = LayoutParams.MATCH_PARENT
+            height = LayoutParams.MATCH_PARENT
+            x = 0
+            y = 0
         }
 
-        logger.d("updateSidebarPosition: posX=$sidebarPositionX posY=$sidebarPositionY" +
-                " lp.x=${layoutParams.x} lp.y=${layoutParams.y} height=${layoutParams.height}")
+        logger.d("updateSidebarPosition: posX=$sidebarPositionX (MATCH_PARENT window)")
 
         if (isShowing) {
             handler.post {
@@ -214,9 +189,6 @@ class SidebarView(
                         viewModel = viewModel,
                         launchApp = { launchAppInFreeform(it) },
                         closeSidebar = { removeView() },
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .wrapContentWidth()
                     )
                 }
             }

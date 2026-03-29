@@ -284,6 +284,24 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
         const val KEY_SHOW_PREDICTED_APPS = "sidebar_show_predicted_apps"
         const val KEY_SMART_CLIPBOARD = "sidebar_smart_clipboard"
         const val KEY_CLIPBOARD_EXPIRATION_HOURS = "sidebar_clipboard_expiration_hours"
+        private const val KEY_SIDEBAR_WIDTH_DP = "sidebar_width_dp"
+        private const val KEY_SIDEBAR_HEIGHT_DP = "sidebar_height_dp"
+        private const val KEY_SIDEBAR_OFFSET_PX = "sidebar_vertical_offset_px"
+    }
+
+    fun getSidebarGeometry(): Triple<Float, Float, Float> = Triple(
+        sharedPrefs.getFloat(KEY_SIDEBAR_WIDTH_DP, 160f),
+        sharedPrefs.getFloat(KEY_SIDEBAR_HEIGHT_DP, 550f),
+        sharedPrefs.getFloat(KEY_SIDEBAR_OFFSET_PX, 0f)
+    )
+
+    /** Call on drag-end — writes to the existing sharedPrefs file, no extra I/O overhead. */
+    fun saveSidebarGeometry(widthDp: Float, heightDp: Float, verticalOffsetPx: Float) {
+        sharedPrefs.edit()
+            .putFloat(KEY_SIDEBAR_WIDTH_DP, widthDp)
+            .putFloat(KEY_SIDEBAR_HEIGHT_DP, heightDp)
+            .putFloat(KEY_SIDEBAR_OFFSET_PX, verticalOffsetPx)
+            .apply()
     }
 
     init {

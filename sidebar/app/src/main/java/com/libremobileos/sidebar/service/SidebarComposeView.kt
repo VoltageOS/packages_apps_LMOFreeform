@@ -36,6 +36,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -66,15 +69,53 @@ fun SidebarComposeView(
     val config = LocalConfiguration.current
     val hostView = LocalView.current
 
-    var sidebarWidth by remember { mutableStateOf(160.dp) }
-    var sidebarHeight by remember { mutableStateOf(550.dp) }
-    var verticalOffset by remember { mutableStateOf(0f) } 
+    val minSidebarWidth = 160.dp
+    val minSidebarHeight = 168.dp
 
-    val screenHeightPx = with(density) { config.screenHeightDp.dp.toPx() }
+    val savedGeometry = remember { viewModel.getSidebarGeometry() }
+    var sidebarWidth by remember { mutableStateOf(savedGeometry.first.dp) }
+    var sidebarHeight by remember { mutableStateOf(savedGeometry.second.dp) }
+    var verticalOffset by remember { mutableStateOf(savedGeometry.third) }
+
+    var cardBounds by remember { mutableStateOf(Rect.Zero) }
+
     val maxScreenWidth = config.screenWidthDp.dp * 0.85f
-    val maxSidebarHeight = config.screenHeightDp.dp * 0.95f
 
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(closeSidebar) {
+                detectTapGestures { tapOffset ->
+                    if (!cardBounds.contains(tapOffset)) closeSidebar()
+                }
+            }
+    ) {
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .systemBarsPadding(), 
+        contentAlignment = Alignment.CenterEnd
+    ) {
+        val containerHeightPx = with(density) { maxHeight.toPx() }
+        val maxSidebarHeight = maxHeight * 0.95f
+        val limit = (containerHeightPx - with(density) { sidebarHeight.toPx() }) / 2
+
+        LaunchedEffect(limit, maxSidebarHeight) {
+            var changed = false
+            if (sidebarHeight > maxSidebarHeight) {
+                sidebarHeight = maxSidebarHeight
+                changed = true
+            }
+            if (verticalOffset < -limit || verticalOffset > limit) {
+                verticalOffset = verticalOffset.coerceIn(-limit, limit)
+                changed = true
+            }
+            if (changed) {
+                viewModel.saveSidebarGeometry(sidebarWidth.value, sidebarHeight.value, verticalOffset)
+            }
+        }
+
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF16181D)),
             shape = RoundedCornerShape(topStart = 32.dp, bottomStart = 32.dp, topEnd = 0.dp, bottomEnd = 0.dp),
@@ -82,6 +123,7 @@ fun SidebarComposeView(
                 .offset { IntOffset(0, verticalOffset.roundToInt()) }
                 .width(sidebarWidth)
                 .height(sidebarHeight)
+                .onGloballyPositioned { cardBounds = it.boundsInRoot() }
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 
@@ -132,22 +174,30 @@ fun SidebarComposeView(
                 }
 
 
-                Box(modifier = Modifier.align(Alignment.TopStart).size(48.dp).pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
+                Box(modifier = Modifier.align(Alignment.TopStart).size(48.dp).pointerInput(containerHeightPx) {
+                    detectDragGestures(
+                        onDragEnd = { viewModel.saveSidebarGeometry(sidebarWidth.value, sidebarHeight.value, verticalOffset) }
+                    ) { change, dragAmount ->
                         change.consume()
-                        val limit = (screenHeightPx - with(density) { sidebarHeight.toPx() }) / 2
-                        verticalOffset = (verticalOffset + dragAmount.y).coerceIn(-limit, limit)
+                        val currentLimit = (containerHeightPx - with(density) { sidebarHeight.toPx() }) / 2
+                        verticalOffset = (verticalOffset + dragAmount.y).coerceIn(-currentLimit, currentLimit)
                     }
                 }, contentAlignment = Alignment.Center) {
                     Icon(Icons.Default.OpenWith, null, Modifier.size(18.dp), Color.White.copy(alpha = 0.15f))
                 }
 
-                Box(modifier = Modifier.align(Alignment.BottomStart).size(48.dp).pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
+                Box(modifier = Modifier.align(Alignment.BottomStart).size(48.dp).pointerInput(containerHeightPx) {
+                    detectDragGestures(
+                        onDragEnd = { viewModel.saveSidebarGeometry(sidebarWidth.value, sidebarHeight.value, verticalOffset) }
+                    ) { change, dragAmount ->
                         change.consume()
                         with(density) {
-                            sidebarWidth = (sidebarWidth - dragAmount.x.toDp()).coerceIn(130.dp, maxScreenWidth)
-                            sidebarHeight = (sidebarHeight + (dragAmount.y.toDp() * 2)).coerceIn(250.dp, maxSidebarHeight)
+                            sidebarWidth = (sidebarWidth - dragAmount.x.toDp()).coerceIn(minSidebarWidth, maxScreenWidth)
+                            val newHeight = (sidebarHeight + (dragAmount.y.toDp() * 2)).coerceIn(minSidebarHeight, maxSidebarHeight)
+                            sidebarHeight = newHeight
+                            
+                            val currentLimit = (containerHeightPx - newHeight.toPx()) / 2
+                            verticalOffset = verticalOffset.coerceIn(-currentLimit, currentLimit)
                         }
                     }
                 }, contentAlignment = Alignment.Center) {
@@ -155,6 +205,7 @@ fun SidebarComposeView(
                 }
             }
         }
+    }
     }
 }
 
@@ -170,7 +221,7 @@ private fun AppGridContent(appList: List<AppInfo>, onLaunch: (AppInfo) -> Unit) 
             AppIconItem(appList[0], onLaunch, availableWidth)
         } else {
             val cols = if (availableWidth > 200.dp) 3 else 2
-            val iconSize = if (availableWidth < 110.dp) 36.dp else 44.dp
+            val iconSize = 44.dp // sidebar never narrows below 160dp, so 36dp branch is unreachable
 
             LazyVerticalGrid(
                 columns = GridCells.Fixed(cols),
