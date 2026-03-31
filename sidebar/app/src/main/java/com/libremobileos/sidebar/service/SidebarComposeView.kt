@@ -127,7 +127,7 @@ fun SidebarComposeView(
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 
-                Column(modifier = Modifier.fillMaxSize().padding(start = 32.dp, end = 8.dp)) {
+                Column(modifier = Modifier.fillMaxSize().padding(start = 42.dp, end = 8.dp)) {
                     
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp),
@@ -138,7 +138,12 @@ fun SidebarComposeView(
                             imageVector = if (pagerState.currentPage == 0) Icons.Default.Apps else Icons.Default.ContentPaste,
                             contentDescription = null,
                             tint = Color.White,
-                            modifier = Modifier.size(26.dp)
+                            modifier = Modifier
+                                .size(26.dp)
+                                .clip(CircleShape)
+                                .clickable(enabled = pagerState.currentPage == 0) {
+                                    launchApp(viewModel.allAppActivity)
+                                }
                         )
                         IconButton(
                             onClick = { viewModel.openSidebarSettings(); closeSidebar() },
@@ -154,7 +159,10 @@ fun SidebarComposeView(
                         verticalAlignment = Alignment.CenterVertically
                     ) { page ->
                         if (page == 0) {
-                            AppGridContent(sidebarAppList, launchApp)
+                        val combinedAppList = remember(sidebarAppList) {
+                            listOf(viewModel.allAppActivity) + sidebarAppList
+                        }
+                        AppGridContent(combinedAppList, launchApp)
                         } else {
                             ClipboardListContent(smartClipboardItems, viewModel, hostView)
                         }
@@ -174,7 +182,7 @@ fun SidebarComposeView(
                 }
 
 
-                Box(modifier = Modifier.align(Alignment.TopStart).size(48.dp).pointerInput(containerHeightPx) {
+                Box(modifier = Modifier.align(Alignment.TopStart).size(width = 40.dp, height = 56.dp).pointerInput(containerHeightPx) {
                     detectDragGestures(
                         onDragEnd = { viewModel.saveSidebarGeometry(sidebarWidth.value, sidebarHeight.value, verticalOffset) }
                     ) { change, dragAmount ->
@@ -186,7 +194,7 @@ fun SidebarComposeView(
                     Icon(Icons.Default.OpenWith, null, Modifier.size(18.dp), Color.White.copy(alpha = 0.15f))
                 }
 
-                Box(modifier = Modifier.align(Alignment.BottomStart).size(48.dp).pointerInput(containerHeightPx) {
+                Box(modifier = Modifier.align(Alignment.BottomStart).size(width = 40.dp, height = 56.dp).pointerInput(containerHeightPx) {
                     detectDragGestures(
                         onDragEnd = { viewModel.saveSidebarGeometry(sidebarWidth.value, sidebarHeight.value, verticalOffset) }
                     ) { change, dragAmount ->
