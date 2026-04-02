@@ -83,6 +83,7 @@ class SidebarView(
             lifecycleRegistry = LifecycleRegistry(this)
         }
 
+        updateSidebarPosition()
         initComposeView()
 
         layoutParams.apply {
@@ -99,7 +100,6 @@ class SidebarView(
                     LayoutParams.FLAG_HARDWARE_ACCELERATED
         }
 
-        updateSidebarPosition()
         composeView.translationX = sidebarPositionX * 1.0f * 200
         composeView.setOnDragListener { _, event ->
             when (event.action) {
@@ -179,6 +179,7 @@ class SidebarView(
 
     private fun initComposeView() {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+        val opensFromLeft = sidebarPositionX < 0
         composeView = ComposeView(context).apply {
             setViewTreeLifecycleOwner(this@SidebarView)
             setViewTreeSavedStateRegistryOwner(this@SidebarView)
@@ -187,6 +188,7 @@ class SidebarView(
                 SidebarTheme {
                     SidebarComposeView(
                         viewModel = viewModel,
+                        opensFromLeft = opensFromLeft,
                         launchApp = { launchAppInFreeform(it) },
                         closeSidebar = { removeView() },
                     )

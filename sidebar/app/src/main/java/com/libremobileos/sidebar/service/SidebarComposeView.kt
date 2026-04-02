@@ -56,6 +56,7 @@ import kotlin.math.roundToInt
 @Composable
 fun SidebarComposeView(
     viewModel: ServiceViewModel,
+    opensFromLeft: Boolean,
     launchApp: (AppInfo) -> Unit,
     closeSidebar: () -> Unit,
     modifier: Modifier = Modifier
@@ -69,7 +70,7 @@ fun SidebarComposeView(
     val config = LocalConfiguration.current
     val hostView = LocalView.current
 
-    val minSidebarWidth = 160.dp
+    val minSidebarWidth = 130.dp
     val minSidebarHeight = 168.dp
 
     val savedGeometry = remember { viewModel.getSidebarGeometry() }
@@ -78,12 +79,32 @@ fun SidebarComposeView(
     var verticalOffset by remember { mutableStateOf(savedGeometry.third) }
 
     var cardBounds by remember { mutableStateOf(Rect.Zero) }
+    var showClearClipboardDialog by remember { mutableStateOf(false) }
 
     val maxScreenWidth = config.screenWidthDp.dp * 0.85f
+    val panelAlignment = if (opensFromLeft) Alignment.CenterStart else Alignment.CenterEnd
+    val panelShape = if (opensFromLeft) {
+        RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = 12.dp, bottomEnd = 12.dp)
+    } else {
+        RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp, topEnd = 0.dp, bottomEnd = 0.dp)
+    }
+    val handleAlignment = if (opensFromLeft) Alignment.TopEnd else Alignment.TopStart
+    val resizeHandleAlignment = if (opensFromLeft) Alignment.BottomEnd else Alignment.BottomStart
+    val contentPadding = if (opensFromLeft) {
+        PaddingValues(start = 6.dp, end = 4.dp)
+    } else {
+        PaddingValues(start = 4.dp, end = 6.dp)
+    }
+    val headerPadding = if (opensFromLeft) {
+        PaddingValues(top = 16.dp, bottom = 4.dp, start = 0.dp, end = 38.dp)
+    } else {
+        PaddingValues(top = 16.dp, bottom = 4.dp, start = 38.dp, end = 0.dp)
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .then(modifier)
             .pointerInput(closeSidebar) {
                 detectTapGestures { tapOffset ->
                     if (!cardBounds.contains(tapOffset)) closeSidebar()
@@ -95,42 +116,41 @@ fun SidebarComposeView(
         modifier = Modifier
             .fillMaxSize()
             .systemBarsPadding(), 
-        contentAlignment = Alignment.CenterEnd
+        contentAlignment = panelAlignment
     ) {
         val containerHeightPx = with(density) { maxHeight.toPx() }
         val maxSidebarHeight = maxHeight * 0.95f
-        val limit = (containerHeightPx - with(density) { sidebarHeight.toPx() }) / 2
 
-        LaunchedEffect(limit, maxSidebarHeight) {
+        val safeSidebarHeight = sidebarHeight.coerceIn(minSidebarHeight, maxSidebarHeight)
+        val safeSidebarWidth = sidebarWidth.coerceIn(minSidebarWidth, maxScreenWidth)
+        val limit = ((containerHeightPx - with(density) { safeSidebarHeight.toPx() }) / 2f).coerceAtLeast(0f)
+        val safeOffset = verticalOffset.coerceIn(-limit, limit)
+
+        LaunchedEffect(safeSidebarHeight, safeSidebarWidth, safeOffset) {
             var changed = false
-            if (sidebarHeight > maxSidebarHeight) {
-                sidebarHeight = maxSidebarHeight
-                changed = true
-            }
-            if (verticalOffset < -limit || verticalOffset > limit) {
-                verticalOffset = verticalOffset.coerceIn(-limit, limit)
-                changed = true
-            }
+            if (sidebarHeight != safeSidebarHeight) { sidebarHeight = safeSidebarHeight; changed = true }
+            if (sidebarWidth != safeSidebarWidth) { sidebarWidth = safeSidebarWidth; changed = true }
+            if (verticalOffset != safeOffset) { verticalOffset = safeOffset; changed = true }
             if (changed) {
-                viewModel.saveSidebarGeometry(sidebarWidth.value, sidebarHeight.value, verticalOffset)
+                viewModel.saveSidebarGeometry(safeSidebarWidth.value, safeSidebarHeight.value, safeOffset)
             }
         }
 
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF16181D)),
-            shape = RoundedCornerShape(topStart = 32.dp, bottomStart = 32.dp, topEnd = 0.dp, bottomEnd = 0.dp),
+            shape = panelShape,
             modifier = Modifier
-                .offset { IntOffset(0, verticalOffset.roundToInt()) }
-                .width(sidebarWidth)
-                .height(sidebarHeight)
+                .offset { IntOffset(0, safeOffset.roundToInt()) }
+                .width(safeSidebarWidth)
+                .height(safeSidebarHeight)
                 .onGloballyPositioned { cardBounds = it.boundsInRoot() }
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 
-                Column(modifier = Modifier.fillMaxSize().padding(start = 42.dp, end = 8.dp)) {
+                Column(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
                     
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp),
+                        modifier = Modifier.fillMaxWidth().padding(headerPadding),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -139,15 +159,19 @@ fun SidebarComposeView(
                             contentDescription = null,
                             tint = Color.White,
                             modifier = Modifier
-                                .size(26.dp)
+                                .size(24.dp)
                                 .clip(CircleShape)
-                                .clickable(enabled = pagerState.currentPage == 0) {
-                                    launchApp(viewModel.allAppActivity)
+                                .clickable {
+                                    if (pagerState.currentPage == 0) {
+                                        launchApp(viewModel.allAppActivity)
+                                    } else if (smartClipboardItems.isNotEmpty()) {
+                                        showClearClipboardDialog = true
+                                    }
                                 }
                         )
                         IconButton(
                             onClick = { viewModel.openSidebarSettings(); closeSidebar() },
-                            modifier = Modifier.size(40.dp)
+                            modifier = Modifier.size(36.dp)
                         ) {
                             Icon(Icons.Default.Settings, null, Modifier.size(22.dp), Color.White.copy(alpha = 0.5f))
                         }
@@ -159,10 +183,7 @@ fun SidebarComposeView(
                         verticalAlignment = Alignment.CenterVertically
                     ) { page ->
                         if (page == 0) {
-                        val combinedAppList = remember(sidebarAppList) {
-                            listOf(viewModel.allAppActivity) + sidebarAppList
-                        }
-                        AppGridContent(combinedAppList, launchApp)
+                            AppGridContent(sidebarAppList, launchApp)
                         } else {
                             ClipboardListContent(smartClipboardItems, viewModel, hostView)
                         }
@@ -182,7 +203,7 @@ fun SidebarComposeView(
                 }
 
 
-                Box(modifier = Modifier.align(Alignment.TopStart).size(width = 40.dp, height = 56.dp).pointerInput(containerHeightPx) {
+                Box(modifier = Modifier.align(handleAlignment).size(width = 40.dp, height = 56.dp).pointerInput(containerHeightPx) {
                     detectDragGestures(
                         onDragEnd = { viewModel.saveSidebarGeometry(sidebarWidth.value, sidebarHeight.value, verticalOffset) }
                     ) { change, dragAmount ->
@@ -194,13 +215,14 @@ fun SidebarComposeView(
                     Icon(Icons.Default.OpenWith, null, Modifier.size(18.dp), Color.White.copy(alpha = 0.15f))
                 }
 
-                Box(modifier = Modifier.align(Alignment.BottomStart).size(width = 40.dp, height = 56.dp).pointerInput(containerHeightPx) {
+                Box(modifier = Modifier.align(resizeHandleAlignment).size(width = 40.dp, height = 56.dp).pointerInput(containerHeightPx) {
                     detectDragGestures(
                         onDragEnd = { viewModel.saveSidebarGeometry(sidebarWidth.value, sidebarHeight.value, verticalOffset) }
                     ) { change, dragAmount ->
                         change.consume()
                         with(density) {
-                            sidebarWidth = (sidebarWidth - dragAmount.x.toDp()).coerceIn(minSidebarWidth, maxScreenWidth)
+                            val widthDelta = if (opensFromLeft) dragAmount.x.toDp() else -dragAmount.x.toDp()
+                            sidebarWidth = (sidebarWidth + widthDelta).coerceIn(minSidebarWidth, maxScreenWidth)
                             val newHeight = (sidebarHeight + (dragAmount.y.toDp() * 2)).coerceIn(minSidebarHeight, maxSidebarHeight)
                             sidebarHeight = newHeight
                             
@@ -210,6 +232,41 @@ fun SidebarComposeView(
                     }
                 }, contentAlignment = Alignment.Center) {
                     Icon(painterResource(R.drawable.edit_24px), null, Modifier.size(16.dp), Color.White.copy(alpha = 0.15f))
+                }
+            }
+        }
+    }
+
+    if (showClearClipboardDialog) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .pointerInput(Unit) { detectTapGestures { showClearClipboardDialog = false } },
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1C22)),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.width(300.dp).pointerInput(Unit) { detectTapGestures { } }
+            ) {
+                Column(Modifier.padding(24.dp)) {
+                    Text("Clear Clipboard", color = Color.White, fontSize = 20.sp)
+                    Spacer(Modifier.height(16.dp))
+                    Text("Are you sure you want to clear all clipboard history?", color = Color.White.copy(alpha = 0.8f))
+                    Spacer(Modifier.height(24.dp))
+                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                        TextButton(onClick = { showClearClipboardDialog = false }) {
+                            Text("Cancel", color = Color.White.copy(alpha = 0.7f))
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(onClick = {
+                            smartClipboardItems.forEach { viewModel.deleteSmartClipboardItem(it) }
+                            showClearClipboardDialog = false
+                        }) {
+                            Text("Clear", color = Color.Red.copy(alpha = 0.8f))
+                        }
+                    }
                 }
             }
         }
@@ -229,12 +286,12 @@ private fun AppGridContent(appList: List<AppInfo>, onLaunch: (AppInfo) -> Unit) 
             AppIconItem(appList[0], onLaunch, availableWidth)
         } else {
             val cols = if (availableWidth > 200.dp) 3 else 2
-            val iconSize = 44.dp // sidebar never narrows below 160dp, so 36dp branch is unreachable
+            val iconSize = 44.dp
 
             LazyVerticalGrid(
                 columns = GridCells.Fixed(cols),
-                contentPadding = PaddingValues(vertical = 8.dp, horizontal = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(vertical = 8.dp, horizontal = 0.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier
                     .heightIn(max = availableHeight)
