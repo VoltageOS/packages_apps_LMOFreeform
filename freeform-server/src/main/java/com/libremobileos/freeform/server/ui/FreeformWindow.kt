@@ -3,6 +3,7 @@ package com.libremobileos.freeform.server.ui
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Matrix
+import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.graphics.PixelFormat
 import android.graphics.SurfaceTexture
@@ -52,6 +53,10 @@ class FreeformWindow(
     private lateinit var topBarView: View
     private lateinit var bottomBarView: View
     private var displayId = Display.INVALID_DISPLAY
+    private var backGestureEdge = BACK_GESTURE_EDGE_NONE
+    private var backGestureStartX = 0f
+    private var backGestureStartY = 0f
+    private var backGestureTriggered = false
     var defaultDisplayWidth = context.resources.displayMetrics.widthPixels
     var defaultDisplayHeight = context.resources.displayMetrics.heightPixels
     var defaultDisplayRotation = context.display.rotation
@@ -93,6 +98,12 @@ class FreeformWindow(
         private const val FREEFORM_PACKAGE = "com.libremobileos.freeform"
         private const val FREEFORM_LAYOUT = "view_freeform"
         private const val WINDOW_DESTROY_WAIT_MS = 10000L
+        private const val BACK_GESTURE_EDGE_NONE = 0
+        private const val BACK_GESTURE_EDGE_LEFT = 1
+        private const val BACK_GESTURE_EDGE_RIGHT = 2
+        private const val BACK_GESTURE_EDGE_WIDTH_DP = 24
+        private const val BACK_GESTURE_TRIGGER_DISTANCE_DP = 64
+        private const val BACK_GESTURE_VERTICAL_SLOP_DP = 48
     }
 
     init {
@@ -209,6 +220,10 @@ class FreeformWindow(
             return true
         }
 
+        if (handleBackGesture(event)) {
+            return true
+        }
+
         // Copy and transform the original event so we keep batched historical samples.
         val transformedEvent = MotionEvent.obtain(event)
         try {
@@ -224,6 +239,71 @@ class FreeformWindow(
         }
         return true
     }
+
+    private fun handleBackGesture(event: MotionEvent): Boolean {
+        val edgeWidth = dpToPx(BACK_GESTURE_EDGE_WIDTH_DP)
+        val triggerDistance = dpToPx(BACK_GESTURE_TRIGGER_DISTANCE_DP)
+        val verticalSlop = dpToPx(BACK_GESTURE_VERTICAL_SLOP_DP)
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                backGestureStartX = event.x
+                backGestureStartY = event.y
+                backGestureTriggered = false
+                backGestureEdge = when {
+                    event.x <= edgeWidth -> BACK_GESTURE_EDGE_LEFT
+                    event.x >= freeformView.width - edgeWidth -> BACK_GESTURE_EDGE_RIGHT
+                    else -> BACK_GESTURE_EDGE_NONE
+                }
+                return backGestureEdge != BACK_GESTURE_EDGE_NONE
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (backGestureEdge == BACK_GESTURE_EDGE_NONE) {
+                    return false
+                }
+                if (!backGestureTriggered) {
+                    val dx = event.x - backGestureStartX
+                    val dy = kotlin.math.abs(event.y - backGestureStartY)
+                    val inwardDistance = when (backGestureEdge) {
+                        BACK_GESTURE_EDGE_LEFT -> dx
+                        BACK_GESTURE_EDGE_RIGHT -> -dx
+                        else -> 0f
+                    }
+                    if (inwardDistance >= triggerDistance && dy <= verticalSlop) {
+                        backGestureTriggered = true
+                        LMOFreeformServiceHolder.back(displayId)
+                    }
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (backGestureEdge == BACK_GESTURE_EDGE_NONE) {
+                    return false
+                }
+                backGestureEdge = BACK_GESTURE_EDGE_NONE
+                backGestureTriggered = false
+                return true
+            }
+        }
+        return backGestureEdge != BACK_GESTURE_EDGE_NONE
+    }
+
+    private fun updateSystemGestureExclusion() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        if (!::freeformView.isInitialized) return
+
+        val edgeWidth = dpToPx(BACK_GESTURE_EDGE_WIDTH_DP).roundToInt()
+        val width = freeformView.width
+        val height = freeformView.height
+        if (width <= 0 || height <= 0) return
+
+        freeformView.systemGestureExclusionRects = listOf(
+            Rect(0, 0, min(edgeWidth, width), height),
+            Rect(max(0, width - edgeWidth), 0, width, height)
+        )
+    }
+
+    private fun dpToPx(dp: Int): Float = dp * context.resources.displayMetrics.density
 
     /**
      * get freeform screen dimen / freeform view dimen
@@ -303,6 +383,7 @@ class FreeformWindow(
         freeformView = FreeformTextureView(context).apply {
             setOnTouchListener(this@FreeformWindow)
             surfaceTextureListener = this@FreeformWindow
+            addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateSystemGestureExclusion() }
         }
         freeformRootView.layoutParams = freeformRootView.layoutParams.apply {
             width = freeformConfig.width
@@ -323,6 +404,7 @@ class FreeformWindow(
         }
         runCatching {
             windowManager.addView(freeformLayout, windowParams)
+            updateSystemGestureExclusion()
             SystemServiceHolder.windowManager.watchRotation(rotationWatcher, Display.DEFAULT_DISPLAY)
             windowManagerInt.registerDisplaySecureContentListener(this)
         }.onFailure {
