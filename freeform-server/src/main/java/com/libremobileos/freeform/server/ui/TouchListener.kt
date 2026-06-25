@@ -83,25 +83,41 @@ class RightViewClickListener(private val displayId: Int) : View.OnClickListener 
     }
 }
 
-class ScaleTouchListener(private val window: FreeformWindow, private val isRight: Boolean = true): View.OnTouchListener {
+class ScaleTouchListener(private val window: FreeformWindow, private val isRight: Boolean = true, private val uniform: Boolean = false, private val useHorizontal: Boolean = true, private val useVertical: Boolean = true): View.OnTouchListener {
     private var startX = 0.0f
     private var startY = 0.0f
+    private var startWidth = 0
+    private var startHeight = 0
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(v: View, event: MotionEvent): Boolean {
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 startX = event.rawX
                 startY = event.rawY
+                startWidth = window.freeformRootView.width
+                startHeight = window.freeformRootView.height
             }
             MotionEvent.ACTION_MOVE -> {
-                window.freeformRootView.layoutParams = window.freeformRootView.layoutParams.apply {
-                    width = max(25, (window.freeformRootView.width + if (isRight) (event.rawX - startX) else (startX - event.rawX)).roundToInt())
-                    height = max(25, (window.freeformRootView.height + event.rawY - startY).roundToInt())
+                if (uniform) {
+                    var delta = 0f
+                    if (useHorizontal) delta += if (isRight) (event.rawX - startX) else (startX - event.rawX)
+                    if (useVertical) delta += event.rawY - startY
+                    val scale = 1f + delta / (startWidth + startHeight)
+                    window.freeformRootView.layoutParams = window.freeformRootView.layoutParams.apply {
+                        width = max(25, (startWidth * scale).roundToInt())
+                        height = max(25, (startHeight * scale).roundToInt())
+                    }
+                } else {
+                    window.freeformRootView.layoutParams = window.freeformRootView.layoutParams.apply {
+                        width = max(25, (window.freeformRootView.width + if (isRight) (event.rawX - startX) else (startX - event.rawX)).roundToInt())
+                        height = max(25, (window.freeformRootView.height + event.rawY - startY).roundToInt())
+                    }
+                    startX = event.rawX
+                    startY = event.rawY
                 }
-                startX = event.rawX
-                startY = event.rawY
             }
             MotionEvent.ACTION_UP -> {
+                window.updateDisplayInsets()
                 if (window.freeformView.surfaceTexture != null) {
                     window.freeformConfig.width = window.freeformRootView.layoutParams.width
                     window.freeformConfig.height = window.freeformRootView.layoutParams.height

@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">LMOFreeform</string>
+    <string name="freeform_options">Options</string>
+    <string name="freeform_fullscreen">Fullscreen</string>
+    <string name="freeform_minimize">Minimize</string>
+    <string name="freeform_close">Close</string>
 </resources>
