@@ -1,0 +1,35 @@
+<resources>
+    <string name="app_name">侧边栏</string>
+
+    <!--SettingsFragment-->
+    <string name="enable_sideline">使用侧边栏</string>
+    <string name="sidebar_label">侧边栏</string>
+    <string name="sidebar_summary">在悬浮窗中快速打开应用</string>
+    <string name="sidebar_app_setting_label">固定应用</string>
+    <string name="sidebar_settings_description">打开侧边栏设置</string>
+    <string name="sidebar_predicted_apps">显示应用建议</string>
+    <string name="sidebar_predicted_apps_summary">在固定应用下方显示最多 6 个建议应用</string>
+    <string name="smart_clipboard_label">智能剪贴板</string>
+    <string name="smart_clipboard_receiver_label">侧边栏</string>
+    <string name="smart_clipboard_summary">将复制、分享或拖放的文本或图片保存在侧边栏中以便快速复用</string>
+    <string name="smart_clipboard_expiration_label">保存时长为</string>
+    <string name="smart_clipboard_expiration_1_hour">1 小时</string>
+    <string name="smart_clipboard_expiration_1_day">1 天</string>
+    <string name="smart_clipboard_expiration_1_week">1 周</string>
+    <string name="smart_clipboard_expiration_forever">永久</string>
+    <string name="smart_clipboard_empty">在此处复制、分享或拖放文本和图片以保存在侧边栏中。</string>
+    <string name="smart_clipboard_image">图片</string>
+    <string name="smart_clipboard_copy">再次复制</string>
+    <string name="smart_clipboard_share">分享</string>
+    <string name="smart_clipboard_delete">删除</string>
+    <string name="smart_clipboard_copy_description">再次复制剪贴板项目</string>
+    <string name="smart_clipboard_share_description">分享剪贴板项目</string>
+    <string name="smart_clipboard_delete_description">删除剪贴板项目</string>
+    <string name="smart_clipboard_pin_description">固定剪贴板项目</string>
+    <string name="smart_clipboard_image_description">剪贴板图片预览</string>
+    <string name="smart_clipboard_text_description">剪贴板文本项目</string>
+    <string name="smart_clipboard_file_description">剪贴板文件项目</string>
+    <string name="smart_clipboard_saved">已保存到智能剪贴板</string>
+    <string name="smart_clipboard_unsupported">不支持的内容类型</string>
+    <string name="smart_clipboard_file_too_large">文件过大，无法保存（最大 100MB）</string>
+</resources>
