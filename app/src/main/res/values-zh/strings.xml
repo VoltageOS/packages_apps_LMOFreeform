@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">LMO 自由窗口</string>
+    <string name="freeform_options">选项</string>
+    <string name="freeform_fullscreen">全屏</string>
+    <string name="freeform_minimize">最小化</string>
+    <string name="freeform_close">关闭</string>
+</resources>
