@@ -39,7 +39,7 @@ class StartFreeformReceiver : BroadcastReceiver() {
             val isNativeFreeformEnabled = Settings.System.getInt(
                 context.contentResolver,
                 "freeform_launch_mode",
-                0
+                1
             ) == 0
             val isSideBarBroadcast = 
                 intent.getStringExtra("packageName").equals(PACKAGE_NAME)
