@@ -217,6 +217,21 @@
             </LinearLayout>
         </LinearLayout>
 
+        <ImageView
+            android:id="@+id/bubbleView"
+            android:tag="bubbleView"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:visibility="gone"
+            android:elevation="6dp"
+            android:scaleType="centerCrop"
+            android:background="@drawable/bubble_bg"
+            android:padding="12dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent" />
+
     </androidx.constraintlayout.widget.ConstraintLayout>
 
 </androidx.cardview.widget.CardView>

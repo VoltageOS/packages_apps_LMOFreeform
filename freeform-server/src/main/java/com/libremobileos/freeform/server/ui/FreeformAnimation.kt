@@ -6,23 +6,8 @@ import android.animation.ValueAnimator
 
 object FreeformAnimation {
     fun moveInScreenAnimator(start: Int, end: Int, dur: Long, moveX: Boolean, window: FreeformWindow) {
-        AnimatorSet().apply {
-            play(
-                ValueAnimator.ofInt(start, end).apply {
-                    addUpdateListener {
-                        window.windowManager.updateViewLayout(
-                            window.freeformLayout,
-                            window.windowParams.apply {
-                                if (moveX) x = it.animatedValue as Int
-                                else y = it.animatedValue as Int
-                            }
-                        )
-                    }
-                }
-            )
-            duration = dur
-            start()
-        }
+        if (moveX) window.animateTo(x = end, dur = dur)
+        else window.animateTo(y = end, dur = dur)
     }
 
     fun toFullScreen(window: FreeformWindow, dur: Long, listener: Animator.AnimatorListener) {

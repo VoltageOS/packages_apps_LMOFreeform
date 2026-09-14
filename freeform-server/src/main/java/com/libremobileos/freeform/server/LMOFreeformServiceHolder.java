@@ -18,6 +18,7 @@ import android.os.SystemClock;
 import android.os.UserHandle;
 import android.util.Slog;
 import android.view.InputDevice;
+import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.Surface;
@@ -67,16 +68,29 @@ public class LMOFreeformServiceHolder {
 
     public static boolean startApp(Context context, AppConfig appConfig, int displayId) {
         dlog(TAG, "startApp $appConfig displayId=$displayId");
+        ActivityOptions activityOptions = ActivityOptions.makeBasic();
+        activityOptions.setLaunchDisplayId(displayId);
+        activityOptions.setCallerDisplayId(displayId);
+        UserHandle user = new UserHandle(appConfig.getUserId());
         try {
             Intent intent = new Intent();
             intent.setComponent(new ComponentName(appConfig.getPackageName(), appConfig.getActivityName()));
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             intent.setAction(Intent.ACTION_MAIN);
             intent.addCategory(Intent.CATEGORY_LAUNCHER);
-            ActivityOptions activityOptions = ActivityOptions.makeBasic();
-            activityOptions.setLaunchDisplayId(displayId);
-            activityOptions.setCallerDisplayId(displayId);
-            context.startActivityAsUser(intent, activityOptions.toBundle(), new UserHandle(appConfig.getUserId()));
+            context.startActivityAsUser(intent, activityOptions.toBundle(), user);
+            return true;
+        } catch (Exception e) {
+            Slog.w(TAG, "startApp explicit component failed, trying launcher intent", e);
+        }
+        try {
+            Intent launch = context.getPackageManager().getLaunchIntentForPackage(appConfig.getPackageName());
+            if (launch == null) {
+                Slog.e(TAG, "startApp failed: no launch intent for " + appConfig.getPackageName());
+                return false;
+            }
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivityAsUser(launch, activityOptions.toBundle(), user);
             return true;
         } catch (Exception e) {
             Slog.e(TAG, "startApp failed", e);
@@ -113,22 +127,32 @@ public class LMOFreeformServiceHolder {
     }
 
     public static void back(int displayId) {
+        long downTime = SystemClock.uptimeMillis();
+        int flags = KeyEvent.FLAG_FROM_SYSTEM | KeyEvent.FLAG_VIRTUAL_HARD_KEY;
         KeyEvent down = new KeyEvent(
-                SystemClock.uptimeMillis(),
-                SystemClock.uptimeMillis(),
+                downTime,
+                downTime,
                 KeyEvent.ACTION_DOWN,
                 KeyEvent.KEYCODE_BACK,
-                0
+                0,
+                0,
+                KeyCharacterMap.VIRTUAL_KEYBOARD,
+                0,
+                flags,
+                InputDevice.SOURCE_KEYBOARD
         );
-        down.setSource(InputDevice.SOURCE_KEYBOARD);
         KeyEvent up = new KeyEvent(
-                SystemClock.uptimeMillis(),
+                downTime,
                 SystemClock.uptimeMillis(),
                 KeyEvent.ACTION_UP,
                 KeyEvent.KEYCODE_BACK,
-                0
+                0,
+                0,
+                KeyCharacterMap.VIRTUAL_KEYBOARD,
+                0,
+                flags,
+                InputDevice.SOURCE_KEYBOARD
         );
-        up.setSource(InputDevice.SOURCE_KEYBOARD);
         try {
             lmoFreeformService.injectInputEvent(down, displayId);
             lmoFreeformService.injectInputEvent(up, displayId);

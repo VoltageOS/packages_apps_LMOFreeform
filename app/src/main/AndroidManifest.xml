@@ -20,6 +20,7 @@
             android:exported="true" >
             <intent-filter>
                 <action android:name="com.libremobileos.freeform.START_FREEFORM" />
+                <action android:name="com.libremobileos.freeform.SAVE_GEOMETRY" />
             </intent-filter>
         </receiver>
     </application>

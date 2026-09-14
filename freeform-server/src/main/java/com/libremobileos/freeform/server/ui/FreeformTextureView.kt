@@ -18,15 +18,11 @@ class FreeformTextureView @JvmOverloads constructor(
         private const val TAG = "LMOFreeform/FreeformTextureView"
     }
 
-    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        return super.dispatchGenericMotionEvent(event)
-    }
+    var onGenericMotion: ((MotionEvent) -> Boolean)? = null
 
-    override fun dispatchTouchEvent(event: MotionEvent?): Boolean {
-        return super.dispatchTouchEvent(event)
-    }
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean =
+        onGenericMotion?.invoke(event) ?: super.onGenericMotionEvent(event)
 
-    override fun dispatchGenericPointerEvent(event: MotionEvent?): Boolean {
-        return super.dispatchGenericPointerEvent(event)
-    }
+    override fun onHoverEvent(event: MotionEvent): Boolean =
+        onGenericMotion?.invoke(event) ?: super.onHoverEvent(event)
 }
