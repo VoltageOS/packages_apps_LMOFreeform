@@ -3,6 +3,7 @@ package com.libremobileos.sidebar.service
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import com.libremobileos.sidebar.utils.Logger
 
 /**
@@ -31,7 +32,7 @@ class GestureListener(private val callback: Callback) : MGestureManager.MGesture
         velocity: Float
     ): Boolean {
         if (null != gestureEvent) {
-            if (gestureEvent == MGestureManager.GestureEvent.SINGLE_GINGER_LEFT_SLIP || gestureEvent == MGestureManager.GestureEvent.SINGLE_GINGER_RIGHT_SLIP) {
+            if (gestureEvent == MGestureManager.GestureEvent.SINGLE_FINGER_LEFT_SLIP || gestureEvent == MGestureManager.GestureEvent.SINGLE_FINGER_RIGHT_SLIP) {
                 callback.showSidebar()
             }
             return true
@@ -40,14 +41,14 @@ class GestureListener(private val callback: Callback) : MGestureManager.MGesture
     }
 
     override fun onTouchEvent(event: MotionEvent) {
-        logger.d("onTouchEvent action=${event.action} x=${event.rawX} y=${event.rawY}")
-        when (event.action) {
+        logger.d("onTouchEvent action=${event.actionMasked} x=${event.rawX} y=${event.rawY}")
+        when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 initialTouchX = event.rawX
                 initialTouchY = event.rawY
 
                 isLongPress = false
-                longPressHandler.postDelayed(longPressRunnable, 500)
+                longPressHandler.postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
             }
             MotionEvent.ACTION_MOVE -> {
                 if (isLongPress) {

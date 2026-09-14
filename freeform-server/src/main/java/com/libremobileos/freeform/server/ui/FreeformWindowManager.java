@@ -9,27 +9,40 @@ import android.os.Handler;
 import android.util.ArrayMap;
 import android.util.Slog;
 
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class FreeformWindowManager {
-    private static final HashMap<String, FreeformWindow> freeformWindows = new HashMap<>(1);
+    private static final ConcurrentHashMap<String, FreeformWindow> freeformWindows = new ConcurrentHashMap<>(1);
     private static final String TAG = "FreeformWindowManager";
 
     public static void addWindow(
             Handler handler, Context context,
             String packageName, String activityName, int userId, int taskId,
             PendingIntent pendingIntent, int width, int height, int densityDpi) {
+        String freeformId = packageName + "," + activityName + "," + userId;
+        FreeformWindow oldWindow = freeformWindows.get(freeformId);
+        if (oldWindow != null) {
+            runCatchingOldWindow(oldWindow);
+        }
         AppConfig appConfig = new AppConfig(packageName, activityName, pendingIntent, userId, taskId);
         FreeformConfig freeformConfig = new FreeformConfig(width, height, densityDpi);
         FreeformWindow window = new FreeformWindow(handler, context, appConfig, freeformConfig);
         dlog(TAG, "addWindow: " + packageName + "/" + activityName + ", freeformId=" + window.getFreeformId()
                 + ", existing freeformWindows=" + freeformWindows);
-        FreeformWindow oldWindow = freeformWindows.get(window.getFreeformId());
-        if (oldWindow != null) {
-            oldWindow.close();
-            oldWindow.destroy("addWindow", false);
-        }
         freeformWindows.put(window.getFreeformId(), window);
+    }
+
+    private static void runCatchingOldWindow(FreeformWindow oldWindow) {
+        try {
+            oldWindow.close();
+        } catch (Exception e) {
+            Slog.w(TAG, "close old window failed: " + e);
+        }
+        try {
+            oldWindow.destroy("addWindow", false);
+        } catch (Exception e) {
+            Slog.w(TAG, "destroy old window failed: " + e);
+        }
     }
 
     /**
@@ -39,6 +52,20 @@ public class FreeformWindowManager {
         FreeformWindow removedWindow = freeformWindows.remove(freeformId);
         if (close && removedWindow != null)
             removedWindow.close();
+    }
+
+    public static void dumpLocked(java.io.PrintWriter pw) {
+        pw.println("LMOFreeform windows (" + freeformWindows.size() + "):");
+        java.util.Map<String, FreeformWindow> snapshot =
+                new java.util.HashMap<>(freeformWindows);
+        for (FreeformWindow window : snapshot.values()) {
+            try {
+                window.dumpState(pw);
+            } catch (Exception e) {
+                pw.println("  <window dump failed: " + e + ">");
+            }
+        }
+        pw.flush();
     }
 
     public static void removeWindow(String freeformId) {

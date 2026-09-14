@@ -88,16 +88,14 @@ class SidebarView(
 
         layoutParams.apply {
             type = LayoutParams.TYPE_APPLICATION_OVERLAY
-            flags = LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            flags = LayoutParams.FLAG_NOT_FOCUSABLE or
+                    LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                     LayoutParams.FLAG_HARDWARE_ACCELERATED
             privateFlags = LayoutParams.PRIVATE_FLAG_TRUSTED_OVERLAY or
                     LayoutParams.PRIVATE_FLAG_SYSTEM_APPLICATION_OVERLAY
             format = PixelFormat.RGBA_8888
             windowAnimations = android.R.style.Animation_Dialog
             layoutInDisplayCutoutMode = LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
-            flags = LayoutParams.FLAG_NOT_FOCUSABLE or
-                    LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    LayoutParams.FLAG_HARDWARE_ACCELERATED
         }
 
         composeView.translationX = sidebarPositionX * 1.0f * 200

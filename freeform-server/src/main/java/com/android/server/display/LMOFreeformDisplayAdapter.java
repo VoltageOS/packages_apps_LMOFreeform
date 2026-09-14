@@ -80,12 +80,19 @@ public class LMOFreeformDisplayAdapter extends DisplayAdapter {
             lmoFreeformDisplayCallbackArrayMap.put(device, callback);
 
             mHandler.postDelayed(() -> {
-                LogicalDisplay display = mLogicalDisplayMapper.getDisplayLocked(device);
-                Slog.i(TAG, "findLogicalDisplayForDevice " + display);
                 try {
+                    LogicalDisplay display;
+                    synchronized (getSyncRoot()) {
+                        display = mLogicalDisplayMapper.getDisplayLocked(device);
+                    }
+                    Slog.i(TAG, "findLogicalDisplayForDevice " + display);
+                    if (display == null) {
+                        Slog.w(TAG, "no LogicalDisplay yet for " + device);
+                        return;
+                    }
                     callback.onDisplayAdd(display.getDisplayIdLocked());
-                } catch (Exception ignored) {
-
+                } catch (Exception e) {
+                    Slog.w(TAG, "onDisplayAdd callback failed", e);
                 }
             }, 500);
 
@@ -176,21 +183,22 @@ public class LMOFreeformDisplayAdapter extends DisplayAdapter {
             mCallback = callback;
             mAppToken = appToken;
             mPendingChanges |= PENDING_SURFACE_CHANGE;
+            mPendingChanges |= PENDING_RESIZE;
         }
 
         public void resizeLocked(int width, int height, int densityDpi) {
-            if (mWidth != width || mHeight != height || mDensityDpi != densityDpi) {
-                sendDisplayDeviceEventLocked(this, DISPLAY_DEVICE_EVENT_CHANGED);
-                sendTraversalRequestLocked();
-                mWidth = width;
-                mHeight = height;
-                mMode = new Display.Mode.Builder()
-                    .setResolution(width, height)
-                    .setRefreshRate(mRefreshRate)
-                    .build();
-                mDensityDpi = densityDpi;
-                mInfo = null;
-            }
+            if (mWidth == width && mHeight == height && mDensityDpi == densityDpi) return;
+            mWidth = width;
+            mHeight = height;
+            mDensityDpi = densityDpi;
+            mMode = new Display.Mode.Builder()
+                .setResolution(width, height)
+                .setRefreshRate(mRefreshRate)
+                .build();
+            mInfo = null;
+            mPendingChanges |= PENDING_RESIZE;
+            sendDisplayDeviceEventLocked(this, DISPLAY_DEVICE_EVENT_CHANGED);
+            sendTraversalRequestLocked();
         }
 
         public void destroyLocked(boolean binderAlive) {

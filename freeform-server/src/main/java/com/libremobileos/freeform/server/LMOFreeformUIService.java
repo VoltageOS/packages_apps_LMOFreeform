@@ -118,4 +118,13 @@ public class LMOFreeformUIService extends ILMOFreeformUIService.Stub {
         // need inputManager is not null
         return lmoFreeformService.isRunning();
     }
+
+    @Override
+    public void dump(java.io.FileDescriptor fd, java.io.PrintWriter pw, String[] args) {
+        try {
+            FreeformWindowManager.dumpLocked(pw);
+        } catch (Exception e) {
+            pw.println("lmo_freeform dump failed: " + e);
+        }
+    }
 }

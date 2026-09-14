@@ -7,32 +7,37 @@ import android.view.Display
 import android.view.GestureDetector.SimpleOnGestureListener
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import com.libremobileos.freeform.server.LMOFreeformServiceHolder
 import com.libremobileos.freeform.server.SystemServiceHolder
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
 class MoveTouchListener(
     private val window: FreeformWindow
 ) : View.OnTouchListener{
-    private var startX = 0.0f
-    private var startY = 0.0f
+    private var downRawX = 0f
+    private var downRawY = 0f
+    private var startWinX = 0
+    private var startWinY = 0
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(v: View, event: MotionEvent): Boolean {
-        when (event.action) {
+        when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                startX = event.rawX
-                startY = event.rawY
+                window.cancelGeometryAnimations()
+                downRawX = event.rawX
+                downRawY = event.rawY
+                startWinX = window.windowParams.x
+                startWinY = window.windowParams.y
             }
             MotionEvent.ACTION_MOVE -> {
-                window.windowManager.updateViewLayout(window.freeformLayout, window.windowParams.apply {
-                    x = (x + event.rawX - startX).roundToInt()
-                    y = (y + event.rawY - startY).roundToInt()
-                })
-                startX = event.rawX
-                startY = event.rawY
+                window.requestMove(
+                    (startWinX + event.rawX - downRawX).roundToInt(),
+                    (startWinY + event.rawY - downRawY).roundToInt()
+                )
             }
-            MotionEvent.ACTION_UP -> {
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 window.makeSureFreeformInScreen()
             }
         }
@@ -84,53 +89,56 @@ class RightViewClickListener(private val displayId: Int) : View.OnClickListener 
 }
 
 class ScaleTouchListener(private val window: FreeformWindow, private val isRight: Boolean = true, private val uniform: Boolean = false, private val useHorizontal: Boolean = true, private val useVertical: Boolean = true): View.OnTouchListener {
-    private var startX = 0.0f
-    private var startY = 0.0f
-    private var startWidth = 0
-    private var startHeight = 0
+    private var downX = 0f
+    private var downY = 0f
+    private var startW = 0
+    private var startH = 0
+    private var resizing = false
+    private var lastW = 0
+    private var lastH = 0
+    private val slop by lazy { ViewConfiguration.get(window.context).scaledTouchSlop }
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(v: View, event: MotionEvent): Boolean {
-        when (event.action) {
+        when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                startX = event.rawX
-                startY = event.rawY
-                startWidth = window.freeformRootView.width
-                startHeight = window.freeformRootView.height
+                window.cancelGeometryAnimations()
+                downX = event.rawX; downY = event.rawY
+                startW = window.freeformConfig.width
+                startH = window.freeformConfig.height
+                lastW = startW
+                lastH = startH
+                resizing = false
             }
             MotionEvent.ACTION_MOVE -> {
-                if (uniform) {
-                    var delta = 0f
-                    if (useHorizontal) delta += if (isRight) (event.rawX - startX) else (startX - event.rawX)
-                    if (useVertical) delta += event.rawY - startY
-                    val scale = 1f + delta / (startWidth + startHeight)
-                    window.freeformRootView.layoutParams = window.freeformRootView.layoutParams.apply {
-                        width = max(25, (startWidth * scale).roundToInt())
-                        height = max(25, (startHeight * scale).roundToInt())
-                    }
+                val dxRaw = if (isRight) event.rawX - downX else downX - event.rawX
+                val dyRaw = event.rawY - downY
+                if (!resizing && max(abs(dxRaw), abs(dyRaw)) < slop) return true
+                resizing = true
+                val (w, h) = if (uniform) {
+                    var d = 0f
+                    if (useHorizontal) d += dxRaw
+                    if (useVertical) d += dyRaw
+                    val f = (1f + d / max(1, startW + startH)).coerceIn(0.25f, 4f)
+                    (startW * f).roundToInt() to (startH * f).roundToInt()
                 } else {
-                    window.freeformRootView.layoutParams = window.freeformRootView.layoutParams.apply {
-                        width = max(25, (window.freeformRootView.width + if (isRight) (event.rawX - startX) else (startX - event.rawX)).roundToInt())
-                        height = max(25, (window.freeformRootView.height + event.rawY - startY).roundToInt())
-                    }
-                    startX = event.rawX
-                    startY = event.rawY
+                    (startW + if (useHorizontal) dxRaw.roundToInt() else 0) to
+                    (startH + if (useVertical) dyRaw.roundToInt() else 0)
                 }
+                lastW = w
+                lastH = h
+                window.requestResize(w, h)
             }
-            MotionEvent.ACTION_UP -> {
-                window.updateDisplayInsets()
-                if (window.freeformView.surfaceTexture != null) {
-                    window.freeformConfig.width = window.freeformRootView.layoutParams.width
-                    window.freeformConfig.height = window.freeformRootView.layoutParams.height
-                    window.handler.post { window.makeSureFreeformInScreen() }
-                    window.measureScale()
-                    LMOFreeformServiceHolder.resizeFreeform(
-                        window,
-                        window.freeformConfig.freeformWidth,
-                        window.freeformConfig.freeformHeight,
-                        window.freeformConfig.densityDpi
-                    )
-                    window.freeformView.surfaceTexture!!.setDefaultBufferSize(window.freeformConfig.freeformWidth, window.freeformConfig.freeformHeight)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (resizing) {
+                    if (event.actionMasked == MotionEvent.ACTION_UP && window.exceedsMax(lastW, lastH)) {
+                        MaximizeClickListener(window).onClick(v)
+                    } else {
+                        window.commitResize()
+                        window.handler.post { window.makeSureFreeformInScreen() }
+                    }
                 }
+                resizing = false
             }
         }
         return true
@@ -172,14 +180,7 @@ class HangUpGestureListener(private val window: FreeformWindow) : SimpleOnGestur
         val newX = (startX + e2.rawX - e1RawX).roundToInt()
         val newY = (startY + e2.rawY - e1RawY).roundToInt()
 
-        try {
-            window.handler.post {
-                window.windowManager.updateViewLayout(window.freeformLayout, window.windowParams.apply {
-                    x = newX
-                    y = newY
-                })
-            }
-        } catch (e: Exception) {}
+        window.handler.post { window.requestMove(newX, newY) }
         return true
     }
 
