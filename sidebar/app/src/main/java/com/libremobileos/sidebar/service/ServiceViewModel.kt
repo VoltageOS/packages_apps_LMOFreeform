@@ -18,14 +18,20 @@ import android.content.SharedPreferences
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Handler
 import android.os.HandlerExecutor
+import android.os.Looper
 import android.os.UserHandle
 import android.os.UserManager
+import android.util.LruCache
 import android.view.View
 import android.webkit.MimeTypeMap
+import android.widget.Toast
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -42,7 +48,9 @@ import com.libremobileos.sidebar.utils.getBadgedIcon
 import com.libremobileos.sidebar.utils.getInfo
 import com.libremobileos.sidebar.utils.isResizeableActivity
 import com.libremobileos.sidebar.utils.isSidebarUserAllowed
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +58,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -62,6 +71,17 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
     private val logger = Logger("ServiceViewModel")
 
     private val repository = DatabaseRepository(application)
+    private val appContext = application.applicationContext
+    private val sharedPrefs = appContext.getSharedPreferences(SidebarApplication.CONFIG, Context.MODE_PRIVATE)
+    private val smartClipboardDir by lazy {
+        File(appContext.filesDir, SMART_CLIPBOARD_DIRECTORY).apply { mkdirs() }
+    }
+    private val janitor by lazy {
+        SmartClipboardJanitor(appContext, repository, sharedPrefs, smartClipboardDir)
+    }
+    private val geometryStore by lazy { SidebarGeometryStore(sharedPrefs) }
+    private val clipboardRepository by lazy { SmartClipboardRepository(repository, smartClipboardDir) }
+    private val appsRepository by lazy { SidebarAppsRepository(repository) }
 
     val sidebarAppListFlow: StateFlow<List<AppInfo>>
         get() = _sidebarAppList.asStateFlow()
@@ -75,19 +95,19 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
 
     private val predictedAppList = MutableStateFlow<List<AppInfo>>(emptyList())
 
-    private val appContext = application.applicationContext
     private val launcherApps = application.getSystemService(Context.LAUNCHER_APPS_SERVICE)!! as LauncherApps
     private val appPredictionManager = application.getSystemService(AppPredictionManager::class.java)
     private val clipboardManager = application.getSystemService(ClipboardManager::class.java)!!
     private val userManager = application.getSystemService(UserManager::class.java)!!
-    private val sharedPrefs = appContext.getSharedPreferences(SidebarApplication.CONFIG, Context.MODE_PRIVATE)
-    private val smartClipboardDir by lazy {
-        File(appContext.filesDir, SMART_CLIPBOARD_DIRECTORY).apply { mkdirs() }
-    }
+    private val clipboardScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val bitmapCache = LruCache<String, ImageBitmap>(20)
 
     private var appPredictor: AppPredictor? = null
-    private val handlerExecutor = HandlerExecutor(Handler())
-    private var callbacksRegistered = false
+    private val handlerExecutor = HandlerExecutor(Handler(Looper.getMainLooper()))
+    private var sidebarCallbacksRegistered = false
+    private var clipboardCallbacksRegistered = false
+    private var prefsListenerRegistered = false
+    private var userProfileRegistered = false
     private var primaryClipListenerRegistered = false
     private var ignoreNextPrimaryClipChange = false
 
@@ -99,6 +119,10 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
         set(value) {
             if (field == value) return
             field = value
+            if (!sidebarCallbacksRegistered) {
+                if (!value) predictedAppList.value = emptyList()
+                return
+            }
             if (value) {
                 registerAppPredictionCallback()
             } else {
@@ -111,9 +135,20 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
             if (field == value) return
             field = value
             _smartClipboardEnabled.value = value
-            if (!callbacksRegistered) return
+            clipboardScope.launch {
+                runCatching {
+                    application.contentResolver.let { cr ->
+                        android.provider.Settings.System.putInt(
+                            cr,
+                            "sidebar_smart_clipboard",
+                            if (value) 1 else 0
+                        )
+                    }
+                }
+            }
+            if (!clipboardCallbacksRegistered) return
             if (value) {
-                registerPrimaryClipChangedListener()
+                registerPrimaryClipChangedListener(captureCurrent = true)
             } else {
                 unregisterPrimaryClipChangedListener()
             }
@@ -130,8 +165,10 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
     private val launcherAppsCallback = object : LauncherApps.Callback() {
         override fun onPackageRemoved(packageName: String, user: UserHandle) {
             logger.d("onPackageRemoved: $packageName")
-            _sidebarAppList.value.getInfo(packageName, user)?.let {
-                repository.deleteSidebarApp(it.packageName, it.activityName, it.userId)
+            viewModelScope.launch(Dispatchers.IO) {
+                _sidebarAppList.value.getInfo(packageName, user)?.let {
+                    repository.deleteSidebarApp(it.packageName, it.activityName, it.userId)
+                }
             }
         }
 
@@ -141,15 +178,21 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
 
         override fun onPackageChanged(packageName: String, user: UserHandle) {
             logger.d("onPackageChanged: $packageName")
-            try {
-                val appInfo = application.packageManager.getApplicationInfo(packageName, 0)
-                if (!appInfo.enabled) {
-                    onPackageRemoved(packageName, user)
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val appInfo = application.packageManager.getApplicationInfo(packageName, 0)
+                    if (!appInfo.enabled) {
+                        _sidebarAppList.value.getInfo(packageName, user)?.let {
+                            repository.deleteSidebarApp(it.packageName, it.activityName, it.userId)
+                        }
+                    }
+                } catch (e: PackageManager.NameNotFoundException) {
+                    _sidebarAppList.value.getInfo(packageName, user)?.let {
+                        repository.deleteSidebarApp(it.packageName, it.activityName, it.userId)
+                    }
+                } catch (e: Exception) {
+                    logger.e("Error checking package status", e)
                 }
-            } catch (e: PackageManager.NameNotFoundException) {
-                onPackageRemoved(packageName, user)
-            } catch (e: Exception) {
-                logger.e("Error checking package status", e)
             }
         }
 
@@ -206,25 +249,26 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
             val user: UserHandle = intent.getParcelableExtra(Intent.EXTRA_USER) ?: return
             val userId = user.identifier
             logger.d("userProfileReceiver received ${intent.action} $user")
-            when (intent.action) {
-                ACTION_PROFILE_AVAILABLE -> {
-                    val sidebarApps = repository.getAllSidebarWithoutLiveData() ?: return
-                    val newApps = sidebarApps
-                        .filter { it.userId == userId }
-                        .mapNotNull { entity ->
-                            runCatching { entity.toAppInfo() }
-                                .onFailure { e ->
-                                    logger.e("failed to add entity $entity: $e" )
-                                }
-                                .getOrNull()
-                        }
-                    logger.d("userProfileReceiver added apps: $newApps")
-                    // add them at the top
-                    _sidebarAppList.value = newApps + _sidebarAppList.value
-                }
-                ACTION_PROFILE_UNAVAILABLE -> {
-                    _sidebarAppList.value = _sidebarAppList.value
-                        .filter { it.userId != userId }
+            viewModelScope.launch(Dispatchers.IO) {
+                when (intent.action) {
+                    ACTION_PROFILE_AVAILABLE -> {
+                        val sidebarApps = repository.getAllSidebarWithoutLiveData() ?: return@launch
+                        val newApps = sidebarApps
+                            .filter { it.userId == userId }
+                            .mapNotNull { entity ->
+                                runCatching { entity.toAppInfo() }
+                                    .onFailure { e ->
+                                        logger.e("failed to add entity $entity: $e" )
+                                    }
+                                    .getOrNull()
+                            }
+                        logger.d("userProfileReceiver added apps: $newApps")
+                        _sidebarAppList.value = newApps + _sidebarAppList.value
+                    }
+                    ACTION_PROFILE_UNAVAILABLE -> {
+                        _sidebarAppList.value = _sidebarAppList.value
+                            .filter { it.userId != userId }
+                    }
                 }
             }
         }
@@ -232,24 +276,22 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
 
     private val primaryClipChangedListener = ClipboardManager.OnPrimaryClipChangedListener {
         if (!smartClipboardEnabled) return@OnPrimaryClipChangedListener
-
-
         val now = System.currentTimeMillis()
-        if (now - lastClipboardEventTime < CLIPBOARD_DEBOUNCE_MS) return@OnPrimaryClipChangedListener
-        lastClipboardEventTime = now
-
         if (ignoreNextPrimaryClipChange) {
             ignoreNextPrimaryClipChange = false
+            lastClipboardEventTime = now
             return@OnPrimaryClipChangedListener
         }
+        if (now - lastClipboardEventTime < CLIPBOARD_DEBOUNCE_MS) return@OnPrimaryClipChangedListener
+        lastClipboardEventTime = now
         val primaryClip = clipboardManager.primaryClip ?: return@OnPrimaryClipChangedListener
-        viewModelScope.launch(Dispatchers.IO) {
+        clipboardScope.launch {
             try {
                 storePrimaryClip(primaryClip)
             } catch (e: IllegalArgumentException) {
                 if (e.message == "FILE_TOO_LARGE") {
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        android.widget.Toast.makeText(appContext, R.string.smart_clipboard_file_too_large, android.widget.Toast.LENGTH_SHORT).show()
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(appContext, R.string.smart_clipboard_file_too_large, Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -263,12 +305,19 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
                     showPredictedApps = sharedPrefs.getBoolean(KEY_SHOW_PREDICTED_APPS, true)
                 }
                 KEY_SMART_CLIPBOARD -> {
-                    smartClipboardEnabled = sharedPrefs.getBoolean(KEY_SMART_CLIPBOARD, false)
-                    android.provider.Settings.System.putInt(
-                        application.contentResolver,
-                        "sidebar_smart_clipboard",
-                        if (smartClipboardEnabled) 1 else 0
-                    )
+                    val enabled = sharedPrefs.getBoolean(KEY_SMART_CLIPBOARD, false)
+                    if (enabled && !clipboardCallbacksRegistered) {
+                        registerClipboardCallbacks()
+                    }
+                    smartClipboardEnabled = enabled
+                }
+                KEY_CLIPBOARD_EXPIRATION_HOURS -> {
+                    clipboardScope.launch {
+                        runCatching {
+                            janitor.sweep()
+                        }
+                        janitor.schedule()
+                    }
                 }
             }
         }
@@ -278,70 +327,110 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
         private const val ALL_APP_PACKAGE = "com.libremobileos.sidebar"
         private const val ALL_APP_ACTIVITY = "com.libremobileos.sidebar.ui.all_app.AllAppActivity"
         private const val MAX_PREDICTED_APPS = 6
-        private const val MAX_SMART_CLIPBOARD_ITEMS = 12
+        const val MAX_SMART_CLIPBOARD_ITEMS = 20
         private const val SMART_CLIPBOARD_DIRECTORY = "smart_clipboard"
         private const val FILE_PROVIDER_SUFFIX = ".fileprovider"
         const val KEY_SHOW_PREDICTED_APPS = "sidebar_show_predicted_apps"
         const val KEY_SMART_CLIPBOARD = "sidebar_smart_clipboard"
         const val KEY_CLIPBOARD_EXPIRATION_HOURS = "sidebar_clipboard_expiration_hours"
-        private const val KEY_SIDEBAR_WIDTH_DP = "sidebar_width_dp"
-        private const val KEY_SIDEBAR_HEIGHT_DP = "sidebar_height_dp"
-        private const val KEY_SIDEBAR_OFFSET_PX = "sidebar_vertical_offset_px"
     }
 
-    fun getSidebarGeometry(): Triple<Float, Float, Float> = Triple(
-        sharedPrefs.getFloat(KEY_SIDEBAR_WIDTH_DP, 160f),
-        sharedPrefs.getFloat(KEY_SIDEBAR_HEIGHT_DP, 550f),
-        sharedPrefs.getFloat(KEY_SIDEBAR_OFFSET_PX, 0f)
-    )
+    fun getSidebarGeometry(): Triple<Float, Float, Float> = geometryStore.get()
 
-    /** Call on drag-end — writes to the existing sharedPrefs file, no extra I/O overhead. */
     fun saveSidebarGeometry(widthDp: Float, heightDp: Float, verticalOffsetPx: Float) {
-        sharedPrefs.edit()
-            .putFloat(KEY_SIDEBAR_WIDTH_DP, widthDp)
-            .putFloat(KEY_SIDEBAR_HEIGHT_DP, heightDp)
-            .putFloat(KEY_SIDEBAR_OFFSET_PX, verticalOffsetPx)
-            .apply()
+        geometryStore.save(widthDp, heightDp, verticalOffsetPx)
     }
 
     init {
         _smartClipboardEnabled.value = smartClipboardEnabled
-        android.provider.Settings.System.putInt(
-            application.contentResolver,
-            "sidebar_smart_clipboard",
-            if (smartClipboardEnabled) 1 else 0
-        )
+        clipboardScope.launch {
+            runCatching {
+                android.provider.Settings.System.putInt(
+                    application.contentResolver,
+                    "sidebar_smart_clipboard",
+                    if (smartClipboardEnabled) 1 else 0
+                )
+            }
+        }
+        ensurePrefsListener()
+        if (smartClipboardEnabled) {
+            registerClipboardCallbacks()
+        }
         logger.d("init")
     }
 
+    private fun ensurePrefsListener() {
+        if (prefsListenerRegistered) return
+        sharedPrefs.registerOnSharedPreferenceChangeListener(sharedPrefsListener)
+        prefsListenerRegistered = true
+    }
+
     fun registerCallbacks() {
-        if (callbacksRegistered) return
-        logger.d("registerCallbacks")
+        registerSidebarCallbacks()
+        registerClipboardCallbacks()
+    }
+
+    fun registerSidebarCallbacks() {
+        if (sidebarCallbacksRegistered) return
+        logger.d("registerSidebarCallbacks")
         initSidebarAppList()
-        initSmartClipboardHistory()
         launcherApps.registerCallback(launcherAppsCallback)
         if (showPredictedApps) registerAppPredictionCallback()
-        if (smartClipboardEnabled) registerPrimaryClipChangedListener()
-        sharedPrefs.registerOnSharedPreferenceChangeListener(sharedPrefsListener)
+        ensurePrefsListener()
         registerUserProfileReceiver()
-        callbacksRegistered = true
+        sidebarCallbacksRegistered = true
+    }
+
+    fun registerClipboardCallbacks() {
+        if (clipboardCallbacksRegistered) return
+        logger.d("registerClipboardCallbacks")
+        ensurePrefsListener()
+        initSmartClipboardHistory()
+        if (smartClipboardEnabled) registerPrimaryClipChangedListener(captureCurrent = false)
+        clipboardScope.launch { janitor.schedule() }
+        clipboardCallbacksRegistered = true
     }
 
     fun unregisterCallbacks() {
-        if (!callbacksRegistered) return
-        logger.d("unregisterCallbacks")
-        launcherApps.unregisterCallback(launcherAppsCallback)
-        sharedPrefs.unregisterOnSharedPreferenceChangeListener(sharedPrefsListener)
+        unregisterSidebarCallbacks()
+        unregisterClipboardCallbacks()
+    }
+
+    fun unregisterSidebarCallbacks() {
+        if (!sidebarCallbacksRegistered) return
+        logger.d("unregisterSidebarCallbacks")
+        runCatching { launcherApps.unregisterCallback(launcherAppsCallback) }
         if (showPredictedApps) unregisterAppPredictionCallback()
-        unregisterPrimaryClipChangedListener()
-        appContext.unregisterReceiver(userProfileReceiver)
+        if (userProfileRegistered) {
+            runCatching { appContext.unregisterReceiver(userProfileReceiver) }
+            userProfileRegistered = false
+        }
         viewModelScope.coroutineContext.cancelChildren()
-        callbacksRegistered = false
+        sidebarCallbacksRegistered = false
+    }
+
+    fun unregisterClipboardCallbacks() {
+        if (!clipboardCallbacksRegistered) return
+        logger.d("unregisterClipboardCallbacks")
+        unregisterPrimaryClipChangedListener()
+        clipboardCallbacksRegistered = false
     }
 
     fun destroy() {
         logger.d("destroy")
         runCatching { viewModelScope.cancel() }
+        runCatching { clipboardScope.cancel() }
+        if (prefsListenerRegistered) {
+            runCatching { sharedPrefs.unregisterOnSharedPreferenceChangeListener(sharedPrefsListener) }
+            prefsListenerRegistered = false
+        }
+    }
+
+    fun requestClipboardSweep() {
+        clipboardScope.launch {
+            runCatching { janitor.sweep() }
+            janitor.schedule()
+        }
     }
 
     fun openSidebarSettings() {
@@ -380,37 +469,37 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
     ) {
         if (clipData == null) {
             if (showToast) {
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    android.widget.Toast.makeText(appContext, R.string.smart_clipboard_unsupported, android.widget.Toast.LENGTH_SHORT).show()
+                clipboardScope.launch(Dispatchers.Main) {
+                    Toast.makeText(appContext, R.string.smart_clipboard_unsupported, Toast.LENGTH_SHORT).show()
                 }
             }
             return
         }
         if (enableIfNeeded && !smartClipboardEnabled) {
             sharedPrefs.edit().putBoolean(KEY_SMART_CLIPBOARD, true).apply()
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                android.widget.Toast.makeText(appContext, "Smart Clipboard enabled", android.widget.Toast.LENGTH_SHORT).show()
+            clipboardScope.launch(Dispatchers.Main) {
+                Toast.makeText(appContext, R.string.smart_clipboard_enabled, Toast.LENGTH_SHORT).show()
             }
         }
         if (!smartClipboardEnabled) return
-        viewModelScope.launch(Dispatchers.IO) {
+        clipboardScope.launch {
             try {
                 val savedCount = storePrimaryClip(clipData)
                 if (showToast) {
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    withContext(Dispatchers.Main) {
                         if (savedCount > 0) {
                             val msgBase = appContext.getString(R.string.smart_clipboard_saved)
                             val msg = if (savedCount > 1) "$msgBase ($savedCount)" else msgBase
-                            android.widget.Toast.makeText(appContext, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            Toast.makeText(appContext, msg, Toast.LENGTH_SHORT).show()
                         } else {
-                            android.widget.Toast.makeText(appContext, R.string.smart_clipboard_unsupported, android.widget.Toast.LENGTH_SHORT).show()
+                            Toast.makeText(appContext, R.string.smart_clipboard_unsupported, Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
             } catch (e: IllegalArgumentException) {
                 if (e.message == "FILE_TOO_LARGE") {
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        android.widget.Toast.makeText(appContext, R.string.smart_clipboard_file_too_large, android.widget.Toast.LENGTH_SHORT).show()
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(appContext, R.string.smart_clipboard_file_too_large, Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -487,15 +576,54 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
     }
 
     fun deleteSmartClipboardItem(item: SmartClipboardEntity) {
-        viewModelScope.launch(Dispatchers.IO) {
+        clipboardScope.launch {
             repository.deleteSmartClipboardItem(item.id)
-            item.imagePath?.let(::deleteCachedImage)
+            item.imagePath?.let { clipboardRepository.deleteFile(it) }
+        }
+    }
+
+    fun clearUnpinnedSmartClipboard() {
+        clipboardScope.launch {
+            clipboardRepository.clearUnpinned()
         }
     }
 
     fun toggleSmartClipboardItemPinned(item: SmartClipboardEntity) {
-        viewModelScope.launch(Dispatchers.IO) {
+        clipboardScope.launch {
             repository.setSmartClipboardItemPinned(item.id, !item.isPinned)
+            janitor.schedule()
+        }
+    }
+
+    suspend fun loadPreviewBitmap(path: String, reqWidth: Int, reqHeight: Int): ImageBitmap? {
+        val key = "$path:${reqWidth}x$reqHeight"
+        bitmapCache.get(key)?.let { return it }
+        return withContext(Dispatchers.IO) {
+            val file = File(path)
+            if (!file.exists()) return@withContext null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            val w = bounds.outWidth
+            val h = bounds.outHeight
+            if (w <= 0 || h <= 0) return@withContext null
+            var sample = 1
+            if (reqWidth > 0 && reqHeight > 0) {
+                val wRatio = w / reqWidth
+                val hRatio = h / reqHeight
+                sample = maxOf(1, minOf(wRatio, hRatio))
+            }
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            val bmp = BitmapFactory.decodeFile(path, opts)?.asImageBitmap() ?: return@withContext null
+            bitmapCache.put(key, bmp)
+            bmp
+        }
+    }
+
+    fun deleteMissingPreview(item: SmartClipboardEntity) {
+        val path = item.imagePath ?: return
+        if (File(path).exists()) return
+        clipboardScope.launch {
+            repository.deleteSmartClipboardItem(item.id)
         }
     }
 
@@ -520,6 +648,7 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
     }
 
     private fun registerUserProfileReceiver() {
+        if (userProfileRegistered) return
         appContext.registerReceiverAsUser(
             userProfileReceiver,
             UserHandle.CURRENT,
@@ -530,15 +659,15 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
             null,
             null
         )
+        userProfileRegistered = true
     }
 
     private fun initSidebarAppList() {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.getAllSidebarAppsByFlow()
+            appsRepository.observe()
                 .combine(predictedAppList) { sidebarApps, predictedApps ->
                     mutableListOf<AppInfo>().apply {
                         logger.d("initSidebarAppList: sidebarApps=$sidebarApps predictedApps=$predictedApps")
-                        // first add the pinned apps
                         sidebarApps?.forEach { entity ->
                             if (!userManager.isSidebarUserAllowed(entity.userId)) {
                                 logger.w("initSidebarAppList: userid not allowed: $entity")
@@ -548,10 +677,9 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
                                 add(entity.toAppInfo())
                             }.onFailure { e ->
                                 logger.w("initSidebarAppList: removing $entity: $e")
-                                repository.deleteSidebarApp(entity.packageName, entity.activityName, entity.userId)
+                                appsRepository.remove(entity.packageName, entity.activityName, entity.userId)
                             }
                         }
-                        // then the predicted apps
                         addAll(
                             predictedApps.filter { sidebarApps?.contains(it)?.not() ?: true }
                         )
@@ -565,12 +693,9 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
     }
 
     private fun initSmartClipboardHistory() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val expirationHours = sharedPrefs.getInt(KEY_CLIPBOARD_EXPIRATION_HOURS, 0)
-            if (expirationHours > 0) {
-                val expirationTimestamp = System.currentTimeMillis() - (expirationHours * 60L * 60L * 1000L)
-                repository.deleteExpiredSmartClipboardItems(expirationTimestamp)
-            }
+        clipboardScope.launch {
+            runCatching { janitor.sweep() }
+            janitor.schedule()
             repository.getRecentSmartClipboardItemsByFlow(MAX_SMART_CLIPBOARD_ITEMS)
                 .combine(_smartClipboardEnabled) { items, enabled ->
                     if (enabled) items else emptyList()
@@ -581,13 +706,21 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
         }
     }
 
-    private fun registerPrimaryClipChangedListener() {
+    private fun registerPrimaryClipChangedListener(captureCurrent: Boolean = false) {
         if (primaryClipListenerRegistered) return
         clipboardManager.addPrimaryClipChangedListener(primaryClipChangedListener)
         primaryClipListenerRegistered = true
+        if (!captureCurrent) return
         clipboardManager.primaryClip?.let { clipData ->
-            viewModelScope.launch(Dispatchers.IO) {
-                try { storePrimaryClip(clipData) } catch (e: Exception) { /* ignore here */ }
+            clipboardScope.launch {
+                try {
+                    val text = buildClipboardText(clipData)
+                    if (text != null) {
+                        val latest = repository.getLatestSmartClipboardItem()
+                        if (latest != null && latest.contentHash == digest(text.toByteArray())) return@launch
+                    }
+                    storePrimaryClip(clipData)
+                } catch (e: Exception) { }
             }
         }
     }
@@ -598,29 +731,32 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
         primaryClipListenerRegistered = false
     }
 
-    @Throws(IllegalArgumentException::class)
-    private fun storePrimaryClip(clipData: ClipData): Int {
+    private suspend fun storePrimaryClip(clipData: ClipData): Int {
         val now = System.currentTimeMillis()
         val contentUris = extractContentUris(clipData)
         var savedCount = 0
-        
+
         if (contentUris.isNotEmpty()) {
             for (uri in contentUris) {
                 val persistedContent = persistContent(uri, clipData) ?: continue
                 val entity = SmartClipboardEntity(
                     type = persistedContent.type,
-                    text = persistedContent.fileName,
+                    text = null,
+                    fileName = persistedContent.fileName,
                     imagePath = persistedContent.path,
                     mimeType = persistedContent.mimeType,
                     contentHash = persistedContent.contentHash,
                     createdAt = now
                 )
                 saveSmartClipboardItem(entity) {
-                    deleteCachedImage(persistedContent.path)
+                    clipboardRepository.deleteFile(persistedContent.path)
                 }
                 savedCount++
             }
-            if (savedCount > 0) return savedCount
+            if (savedCount > 0) {
+                janitor.schedule()
+                return savedCount
+            }
         }
 
         val text = buildClipboardText(clipData)?.takeIf { it.isNotBlank() } ?: return 0
@@ -632,23 +768,26 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
                 createdAt = now
             )
         )
+        janitor.schedule()
         return 1
     }
 
-    private fun saveSmartClipboardItem(
+    private suspend fun saveSmartClipboardItem(
         item: SmartClipboardEntity,
         onDuplicate: (() -> Unit)? = null
     ) {
-        val latest = repository.getLatestSmartClipboardItem()
-        val recentHashes = repository.getRecentHashes(5)
-
-        if (recentHashes.contains(item.contentHash)) {
+        if (repository.countByHash(item.contentHash) > 0) {
+            repository.bumpTimestampByHash(item.contentHash, item.createdAt)
             onDuplicate?.invoke()
             return
         }
         repository.insertSmartClipboardItem(item)
-        repository.trimSmartClipboardHistory(MAX_SMART_CLIPBOARD_ITEMS)
-        trimUnusedCachedImages()
+        repository.trimSmartClipboardHistory(SmartClipboardJanitor.MAX_UNPINNED_ITEMS).forEach {
+            clipboardRepository.deleteFile(it)
+        }
+        repository.trimPinnedHistory(SmartClipboardJanitor.MAX_PINNED_ITEMS).forEach {
+            clipboardRepository.deleteFile(it)
+        }
     }
 
     private fun buildClipboardText(clipData: ClipData): String? {
@@ -672,7 +811,7 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
         return uris
     }
 
-    private fun persistContent(uri: Uri, clipData: ClipData): PersistedContent? {
+    private suspend fun persistContent(uri: Uri, clipData: ClipData): PersistedContent? {
         var mimeType = appContext.contentResolver.getType(uri)
         if (mimeType == null) {
             clipData.description?.let { desc ->
@@ -707,6 +846,7 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
         val uuid = java.util.UUID.randomUUID().toString().take(8)
 
         var fileName: String? = null
+        var declaredSize: Long? = null
         runCatching {
             appContext.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) {
@@ -714,7 +854,27 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
                     if (nameIndex != -1) {
                         fileName = cursor.getString(nameIndex)
                     }
+                    val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (sizeIndex != -1) {
+                        val s = cursor.getLong(sizeIndex)
+                        if (s >= 0) declaredSize = s
+                    }
                 }
+            }
+        }
+        if (declaredSize == null) {
+            runCatching {
+                appContext.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                    if (afd.length >= 0) declaredSize = afd.length
+                }
+            }
+        }
+        declaredSize?.let { size ->
+            if (size > MAX_CLIPBOARD_FILE_SIZE) {
+                throw IllegalArgumentException("FILE_TOO_LARGE")
+            }
+            if (size > smartClipboardDir.usableSpace) {
+                return null
             }
         }
 
@@ -749,7 +909,7 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
             )
         }.onFailure { e ->
             logger.e("failed to persist clipboard content", e)
-            deleteCachedImage(file.absolutePath)
+            clipboardRepository.deleteFile(file.absolutePath)
             if (e is IllegalArgumentException && e.message == "FILE_TOO_LARGE") {
                 throw e
             }
@@ -757,25 +917,12 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
         return null
     }
 
-    private fun trimUnusedCachedImages() {
-        val activeImagePaths = repository.getRecentSmartClipboardItems(Int.MAX_VALUE)
-            .mapNotNull { it.imagePath }
-            .toSet()
+    private suspend fun trimUnusedCachedImages() {
+        val activeImagePaths = repository.getAllImagePaths().toSet()
         smartClipboardDir.listFiles()?.forEach { file ->
             if (file.absolutePath !in activeImagePaths) {
                 file.delete()
             }
-        }
-    }
-
-    private fun deleteCachedImage(path: String) {
-        runCatching {
-            val file = File(path)
-            if (file.exists()) {
-                file.delete()
-            }
-        }.onFailure { e ->
-            logger.e("failed to delete cached smart clipboard image", e)
         }
     }
 
@@ -829,4 +976,3 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
         val contentHash: String
     )
 }
-

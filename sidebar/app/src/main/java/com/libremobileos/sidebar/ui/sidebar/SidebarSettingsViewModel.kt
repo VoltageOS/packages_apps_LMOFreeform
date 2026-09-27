@@ -35,10 +35,6 @@ import kotlinx.coroutines.launch
 import java.text.Collator
 import java.util.Collections
 
-/**
- * @author KindBrave
- * @since 2023/10/21
- */
 class SidebarSettingsViewModel(private val application: Application) : AndroidViewModel(application) {
     private val logger = Logger("SidebarSettingsViewModel")
     private val repository = DatabaseRepository(application)
@@ -48,11 +44,33 @@ class SidebarSettingsViewModel(private val application: Application) : AndroidVi
     private val _appList = MutableStateFlow<List<SidebarAppInfo>>(emptyList())
     private val appComparator = AppComparator()
 
+    val sidebarEnabledFlow: StateFlow<Boolean>
+        get() = _sidebarEnabled.asStateFlow()
+    private val _sidebarEnabled = MutableStateFlow(false)
+    val predictedAppsEnabledFlow: StateFlow<Boolean>
+        get() = _predictedAppsEnabled.asStateFlow()
+    private val _predictedAppsEnabled = MutableStateFlow(true)
+    val smartClipboardEnabledFlow: StateFlow<Boolean>
+        get() = _smartClipboardEnabled.asStateFlow()
+    private val _smartClipboardEnabled = MutableStateFlow(false)
+    val expirationMinutesFlow: StateFlow<Int>
+        get() = _expirationMinutes.asStateFlow()
+    private val _expirationMinutes = MutableStateFlow(0)
+
     val isEnabled = UserHandle.myUserId() == 0
     private val appContext = application.applicationContext
     private lateinit var launcherApps: LauncherApps
     private lateinit var userManager: UserManager
     private lateinit var sp: SharedPreferences
+
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+        when (key) {
+            SidebarService.SIDELINE -> _sidebarEnabled.value = getSidebarEnabled()
+            KEY_SHOW_PREDICTED_APPS -> _predictedAppsEnabled.value = getPredictedAppsEnabled()
+            KEY_SMART_CLIPBOARD -> _smartClipboardEnabled.value = getSmartClipboardEnabled()
+            KEY_CLIPBOARD_EXPIRATION_HOURS -> _expirationMinutes.value = getClipboardExpirationHours()
+        }
+    }
 
     private val userProfileReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -68,6 +86,11 @@ class SidebarSettingsViewModel(private val application: Application) : AndroidVi
             launcherApps = application.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
             userManager = application.getSystemService(Context.USER_SERVICE) as UserManager
             sp = appContext.getSharedPreferences(SidebarApplication.CONFIG, Context.MODE_PRIVATE)
+            _sidebarEnabled.value = getSidebarEnabled()
+            _predictedAppsEnabled.value = getPredictedAppsEnabled()
+            _smartClipboardEnabled.value = getSmartClipboardEnabled()
+            _expirationMinutes.value = getClipboardExpirationHours()
+            sp.registerOnSharedPreferenceChangeListener(prefsListener)
 
             initAllAppList()
             appContext.registerReceiverAsUser(
@@ -86,32 +109,39 @@ class SidebarSettingsViewModel(private val application: Application) : AndroidVi
     override fun onCleared() {
         logger.d("onCleared")
         if (!isEnabled) return
+        runCatching { sp.unregisterOnSharedPreferenceChangeListener(prefsListener) }
         appContext.unregisterReceiver(userProfileReceiver)
     }
 
     fun getSidebarEnabled(): Boolean =
         isEnabled && sp.getBoolean(SidebarService.SIDELINE, false)
 
-    fun setSidebarEnabled(enabled: Boolean) =
+    fun setSidebarEnabled(enabled: Boolean) {
         sp.edit()
             .putBoolean(SidebarService.SIDELINE, enabled)
             .apply()
+    }
 
     fun addSidebarApp(appInfo: SidebarAppInfo) {
-        repository.insertSidebarApp(appInfo.packageName, appInfo.activityName, appInfo.userId)
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.insertSidebarApp(appInfo.packageName, appInfo.activityName, appInfo.userId)
+        }
     }
 
     fun deleteSidebarApp(appInfo: SidebarAppInfo) {
-        repository.deleteSidebarApp(appInfo.packageName, appInfo.activityName, appInfo.userId)
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteSidebarApp(appInfo.packageName, appInfo.activityName, appInfo.userId)
+        }
     }
 
     fun getPredictedAppsEnabled(): Boolean =
         sp.getBoolean(KEY_SHOW_PREDICTED_APPS, true)
 
-    fun setPredictedAppsEnabled(enabled: Boolean) =
+    fun setPredictedAppsEnabled(enabled: Boolean) {
         sp.edit()
             .putBoolean(KEY_SHOW_PREDICTED_APPS, enabled)
             .apply()
+    }
 
     fun getSmartClipboardEnabled(): Boolean =
         sp.getBoolean(KEY_SMART_CLIPBOARD, false)
@@ -122,13 +152,29 @@ class SidebarSettingsViewModel(private val application: Application) : AndroidVi
             .apply()
     }
 
-    fun getClipboardExpirationHours(): Int =
-        sp.getInt(KEY_CLIPBOARD_EXPIRATION_HOURS, 0)
+    fun getClipboardExpirationHours(): Int {
+        return when (val v = sp.getInt(KEY_CLIPBOARD_EXPIRATION_HOURS, 0)) {
+            1 -> 60
+            24 -> 1440
+            168 -> 10080
+            else -> v
+        }
+    }
 
-    fun setClipboardExpirationHours(hours: Int) {
+    fun setClipboardExpirationHours(minutes: Int) {
         sp.edit()
-            .putInt(KEY_CLIPBOARD_EXPIRATION_HOURS, hours)
+            .putInt(KEY_CLIPBOARD_EXPIRATION_HOURS, minutes)
             .apply()
+    }
+
+    fun clearClipboardHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                repository.clearUnpinnedReturningPaths().forEach { path ->
+                    runCatching { java.io.File(path).delete() }
+                }
+            }
+        }
     }
 
     private fun initAllAppList() {
@@ -180,7 +226,6 @@ class SidebarSettingsViewModel(private val application: Application) : AndroidVi
     private inner class AppComparator : Comparator<SidebarAppInfo> {
         override fun compare(p0: SidebarAppInfo, p1: SidebarAppInfo): Int {
             return when {
-                // put checked items first
                 p0.isSidebarApp && !p1.isSidebarApp -> -1
                 p1.isSidebarApp && !p0.isSidebarApp -> 1
                 else -> Collator.getInstance().compare(p0.label, p1.label)

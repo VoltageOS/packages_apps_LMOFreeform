@@ -13,6 +13,7 @@
     <string name="smart_clipboard_receiver_label">Sidebar</string>
     <string name="smart_clipboard_summary">Keep copied, shared, and dropped text or images in Sidebar for quick reuse</string>
     <string name="smart_clipboard_expiration_label">Keep clips for</string>
+    <string name="smart_clipboard_expiration_15_min">15 minutes</string>
     <string name="smart_clipboard_expiration_1_hour">1 hour</string>
     <string name="smart_clipboard_expiration_1_day">1 day</string>
     <string name="smart_clipboard_expiration_1_week">1 week</string>
@@ -22,14 +23,23 @@
     <string name="smart_clipboard_copy">Copy again</string>
     <string name="smart_clipboard_share">Share</string>
     <string name="smart_clipboard_delete">Delete</string>
+    <string name="smart_clipboard_unpin">Unpin</string>
     <string name="smart_clipboard_copy_description">Copy clipboard item again</string>
     <string name="smart_clipboard_share_description">Share clipboard item</string>
     <string name="smart_clipboard_delete_description">Delete clipboard item</string>
     <string name="smart_clipboard_pin_description">Pin clipboard item</string>
+    <string name="smart_clipboard_unpin_description">Unpin clipboard item</string>
     <string name="smart_clipboard_image_description">Clipboard image preview</string>
     <string name="smart_clipboard_text_description">Clipboard text item</string>
     <string name="smart_clipboard_file_description">Clipboard file item</string>
     <string name="smart_clipboard_saved">Saved to Smart Clipboard</string>
     <string name="smart_clipboard_unsupported">Unsupported content type</string>
     <string name="smart_clipboard_file_too_large">File is too large to save (Max 100MB)</string>
+    <string name="smart_clipboard_enabled">Smart Clipboard enabled</string>
+    <string name="smart_clipboard_clear_history">Clear history now</string>
+    <string name="smart_clipboard_clear_title">Clear Clipboard</string>
+    <string name="smart_clipboard_clear_message">Are you sure you want to clear unpinned clipboard history?</string>
+    <string name="smart_clipboard_cancel">Cancel</string>
+    <string name="smart_clipboard_clear">Clear</string>
+    <string name="smart_clipboard_missing_file">File missing</string>
 </resources>

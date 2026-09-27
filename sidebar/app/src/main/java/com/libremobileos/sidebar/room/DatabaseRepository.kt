@@ -6,22 +6,18 @@ import com.libremobileos.sidebar.room.MyDatabase.Companion.getDatabase
 import kotlinx.coroutines.flow.Flow
 import java.lang.Exception
 
-/**
- * @author sunshine
- * @date 2021/1/31
- */
 class DatabaseRepository(context: Context) {
 
     private val sidebarAppsDao: SidebarAppsDao
     private val smartClipboardDao: SmartClipboardDao
 
-    fun insertSidebarApp(packageName: String, activityName: String, userId: Int) {
+    suspend fun insertSidebarApp(packageName: String, activityName: String, userId: Int) {
         try {
             sidebarAppsDao.insert(packageName, activityName, userId)
         }catch (e: Exception) { }
     }
 
-    fun deleteSidebarApp(packageName: String, activityName: String, userId: Int) {
+    suspend fun deleteSidebarApp(packageName: String, activityName: String, userId: Int) {
         sidebarAppsDao.delete(packageName, activityName, userId)
     }
 
@@ -37,27 +33,27 @@ class DatabaseRepository(context: Context) {
         return sidebarAppsDao.getAllByFlow()
     }
 
-    fun getCount(): Int {
+    suspend fun getCount(): Int {
         return sidebarAppsDao.getCount()
     }
 
-    fun update(entity: SidebarAppsEntity) {
+    suspend fun update(entity: SidebarAppsEntity) {
         sidebarAppsDao.update(entity)
     }
 
-    fun getAllSidebarWithoutLiveData() : List<SidebarAppsEntity>? {
+    suspend fun getAllSidebarWithoutLiveData() : List<SidebarAppsEntity>? {
         return sidebarAppsDao.getAllWithoutLiveData()
     }
 
-    fun deleteAllSidebar() {
+    suspend fun deleteAllSidebar() {
         sidebarAppsDao.deleteAll()
     }
 
-    fun deleteMore(sidebarAppsEntityList: List<SidebarAppsEntity>) {
+    suspend fun deleteMore(sidebarAppsEntityList: List<SidebarAppsEntity>) {
         sidebarAppsDao.deleteList(sidebarAppsEntityList)
     }
 
-    fun insertSmartClipboardItem(entity: SmartClipboardEntity): Long {
+    suspend fun insertSmartClipboardItem(entity: SmartClipboardEntity): Long {
         return smartClipboardDao.insert(entity)
     }
 
@@ -65,36 +61,60 @@ class DatabaseRepository(context: Context) {
         return smartClipboardDao.getRecentByFlow(limit)
     }
 
-    fun getRecentSmartClipboardItems(limit: Int): List<SmartClipboardEntity> {
+    suspend fun getRecentSmartClipboardItems(limit: Int): List<SmartClipboardEntity> {
         return smartClipboardDao.getRecent(limit)
     }
 
-    fun getLatestSmartClipboardItem(): SmartClipboardEntity? {
+    suspend fun getLatestSmartClipboardItem(): SmartClipboardEntity? {
         return smartClipboardDao.getLatest()
     }
 
-    fun getRecentHashes(limit: Int): List<String> {
+    suspend fun getRecentHashes(limit: Int): List<String> {
         return smartClipboardDao.getRecentHashes(limit)
     }
 
-    fun deleteSmartClipboardItem(id: Long) {
+    suspend fun countByHash(hash: String): Int {
+        return smartClipboardDao.countByHash(hash)
+    }
+
+    suspend fun bumpTimestampByHash(hash: String, now: Long) {
+        smartClipboardDao.bumpTimestampByHash(hash, now)
+    }
+
+    suspend fun deleteSmartClipboardItem(id: Long) {
         smartClipboardDao.deleteById(id)
     }
 
-    fun deleteAllSmartClipboardItems() {
+    suspend fun deleteAllSmartClipboardItems() {
         smartClipboardDao.deleteAll()
     }
 
-    fun setSmartClipboardItemPinned(id: Long, isPinned: Boolean) {
+    suspend fun clearUnpinnedReturningPaths(): List<String> {
+        return smartClipboardDao.clearUnpinnedReturningPaths()
+    }
+
+    suspend fun setSmartClipboardItemPinned(id: Long, isPinned: Boolean) {
         smartClipboardDao.setPinned(id, isPinned)
     }
 
-    fun trimSmartClipboardHistory(limit: Int) {
-        smartClipboardDao.trimTo(limit)
+    suspend fun trimSmartClipboardHistory(limit: Int): List<String> {
+        return smartClipboardDao.trimToReturningPaths(limit)
     }
 
-    fun deleteExpiredSmartClipboardItems(expirationTimestamp: Long) {
-        smartClipboardDao.deleteExpired(expirationTimestamp)
+    suspend fun trimPinnedHistory(limit: Int): List<String> {
+        return smartClipboardDao.trimPinnedToReturningPaths(limit)
+    }
+
+    suspend fun deleteExpiredReturningPaths(expirationTimestamp: Long): List<String> {
+        return smartClipboardDao.deleteExpiredReturningPaths(expirationTimestamp)
+    }
+
+    suspend fun getAllImagePaths(): List<String> {
+        return smartClipboardDao.getAllImagePaths()
+    }
+
+    suspend fun getOldestUnpinnedCreatedAt(): Long? {
+        return smartClipboardDao.getOldestUnpinnedCreatedAt()
     }
 
     init {

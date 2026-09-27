@@ -16,10 +16,18 @@ class SmartClipboardShareActivity : ComponentActivity() {
 
         val clipData = buildImportClipData(intent)
         if (clipData != null) {
+            for (i in 0 until clipData.itemCount) {
+                clipData.getItemAt(i).uri?.let { uri ->
+                    runCatching {
+                        grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                }
+            }
             startServiceAsUser(
                 Intent(this, SidebarService::class.java).apply {
                     action = SidebarService.ACTION_IMPORT_TO_SMART_CLIPBOARD
                     this.clipData = clipData
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 },
                 UserHandle.CURRENT
             )
