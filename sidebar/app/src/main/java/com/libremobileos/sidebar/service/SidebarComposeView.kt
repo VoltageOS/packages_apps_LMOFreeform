@@ -1,11 +1,12 @@
 package com.libremobileos.sidebar.service
 
-import android.graphics.BitmapFactory
+import android.text.format.DateUtils
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,15 +28,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -48,8 +48,6 @@ import com.android.settingslib.spa.framework.compose.rememberDrawablePainter
 import com.libremobileos.sidebar.R
 import com.libremobileos.sidebar.bean.AppInfo
 import com.libremobileos.sidebar.room.SmartClipboardEntity
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -64,7 +62,7 @@ fun SidebarComposeView(
     val sidebarAppList by viewModel.sidebarAppListFlow.collectAsState()
     val smartClipboardItems by viewModel.smartClipboardItemsFlow.collectAsState()
     val smartClipboardEnabled by viewModel.smartClipboardEnabledFlow.collectAsState()
-    
+
     val pagerState = rememberPagerState(pageCount = { if (smartClipboardEnabled) 2 else 1 })
     val density = LocalDensity.current
     val config = LocalConfiguration.current
@@ -115,7 +113,7 @@ fun SidebarComposeView(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .systemBarsPadding(), 
+            .systemBarsPadding(),
         contentAlignment = panelAlignment
     ) {
         val containerHeightPx = with(density) { maxHeight.toPx() }
@@ -137,7 +135,7 @@ fun SidebarComposeView(
         }
 
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF16181D)),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = panelShape,
             modifier = Modifier
                 .offset { IntOffset(0, safeOffset.roundToInt()) }
@@ -146,9 +144,9 @@ fun SidebarComposeView(
                 .onGloballyPositioned { cardBounds = it.boundsInRoot() }
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                
+
                 Column(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
-                    
+
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(headerPadding),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -157,7 +155,7 @@ fun SidebarComposeView(
                         Icon(
                             imageVector = if (pagerState.currentPage == 0) Icons.Default.Apps else Icons.Default.ContentPaste,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier
                                 .size(24.dp)
                                 .clip(CircleShape)
@@ -173,13 +171,13 @@ fun SidebarComposeView(
                             onClick = { viewModel.openSidebarSettings(); closeSidebar() },
                             modifier = Modifier.size(36.dp)
                         ) {
-                            Icon(Icons.Default.Settings, null, Modifier.size(22.dp), Color.White.copy(alpha = 0.5f))
+                            Icon(Icons.Default.Settings, null, Modifier.size(22.dp), MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 
                     HorizontalPager(
                         state = pagerState,
-                        modifier = Modifier.weight(1f), 
+                        modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically
                     ) { page ->
                         if (page == 0) {
@@ -196,7 +194,7 @@ fun SidebarComposeView(
                     ) {
                         repeat(pagerState.pageCount) { iteration ->
                             val isSelected = pagerState.currentPage == iteration
-                            Box(modifier = Modifier.size(if (isSelected) 6.dp else 4.dp).clip(CircleShape).background(if (isSelected) Color.White else Color.White.copy(alpha = 0.3f)))
+                            Box(modifier = Modifier.size(if (isSelected) 6.dp else 4.dp).clip(CircleShape).background(if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)))
                             if (iteration < pagerState.pageCount - 1) Spacer(Modifier.width(6.dp))
                         }
                     }
@@ -212,7 +210,7 @@ fun SidebarComposeView(
                         verticalOffset = (verticalOffset + dragAmount.y).coerceIn(-currentLimit, currentLimit)
                     }
                 }, contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.OpenWith, null, Modifier.size(18.dp), Color.White.copy(alpha = 0.15f))
+                    Icon(Icons.Default.OpenWith, null, Modifier.size(18.dp), MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f))
                 }
 
                 Box(modifier = Modifier.align(resizeHandleAlignment).size(width = 40.dp, height = 56.dp).pointerInput(containerHeightPx) {
@@ -225,51 +223,37 @@ fun SidebarComposeView(
                             sidebarWidth = (sidebarWidth + widthDelta).coerceIn(minSidebarWidth, maxScreenWidth)
                             val newHeight = (sidebarHeight + (dragAmount.y.toDp() * 2)).coerceIn(minSidebarHeight, maxSidebarHeight)
                             sidebarHeight = newHeight
-                            
+
                             val currentLimit = (containerHeightPx - newHeight.toPx()) / 2
                             verticalOffset = verticalOffset.coerceIn(-currentLimit, currentLimit)
                         }
                     }
                 }, contentAlignment = Alignment.Center) {
-                    Icon(painterResource(R.drawable.edit_24px), null, Modifier.size(16.dp), Color.White.copy(alpha = 0.15f))
+                    Icon(painterResource(R.drawable.edit_24px), null, Modifier.size(16.dp), MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f))
                 }
             }
         }
     }
 
     if (showClearClipboardDialog) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.5f))
-                .pointerInput(Unit) { detectTapGestures { showClearClipboardDialog = false } },
-            contentAlignment = Alignment.Center
-        ) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1C22)),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.width(300.dp).pointerInput(Unit) { detectTapGestures { } }
-            ) {
-                Column(Modifier.padding(24.dp)) {
-                    Text("Clear Clipboard", color = Color.White, fontSize = 20.sp)
-                    Spacer(Modifier.height(16.dp))
-                    Text("Are you sure you want to clear all clipboard history?", color = Color.White.copy(alpha = 0.8f))
-                    Spacer(Modifier.height(24.dp))
-                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                        TextButton(onClick = { showClearClipboardDialog = false }) {
-                            Text("Cancel", color = Color.White.copy(alpha = 0.7f))
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        TextButton(onClick = {
-                            smartClipboardItems.forEach { viewModel.deleteSmartClipboardItem(it) }
-                            showClearClipboardDialog = false
-                        }) {
-                            Text("Clear", color = Color.Red.copy(alpha = 0.8f))
-                        }
-                    }
+        AlertDialog(
+            onDismissRequest = { showClearClipboardDialog = false },
+            title = { Text(stringResource(R.string.smart_clipboard_clear_title)) },
+            text = { Text(stringResource(R.string.smart_clipboard_clear_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearUnpinnedSmartClipboard()
+                    showClearClipboardDialog = false
+                }) {
+                    Text(stringResource(R.string.smart_clipboard_clear), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearClipboardDialog = false }) {
+                    Text(stringResource(R.string.smart_clipboard_cancel))
                 }
             }
-        }
+        )
     }
     }
 }
@@ -279,7 +263,7 @@ private fun AppGridContent(appList: List<AppInfo>, onLaunch: (AppInfo) -> Unit) 
     BoxWithConstraints(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val availableWidth = maxWidth
         val availableHeight = maxHeight
-        
+
         if (appList.isEmpty()) return@BoxWithConstraints
 
         if (appList.size == 1) {
@@ -295,7 +279,7 @@ private fun AppGridContent(appList: List<AppInfo>, onLaunch: (AppInfo) -> Unit) 
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier
                     .heightIn(max = availableHeight)
-                    .wrapContentHeight(Alignment.CenterVertically) 
+                    .wrapContentHeight(Alignment.CenterVertically)
             ) {
                 items(appList) { appInfo ->
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
@@ -306,7 +290,7 @@ private fun AppGridContent(appList: List<AppInfo>, onLaunch: (AppInfo) -> Unit) 
                         )
                         Text(
                             text = appInfo.label,
-                            color = Color.White.copy(alpha = 0.9f),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
                             fontSize = 10.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -331,7 +315,7 @@ private fun AppIconItem(appInfo: AppInfo, onLaunch: (AppInfo) -> Unit, available
         )
         Text(
             text = appInfo.label,
-            color = Color.White.copy(alpha = 0.9f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
             fontSize = 10.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -347,7 +331,7 @@ private fun ClipboardListContent(items: List<SmartClipboardEntity>, viewModel: S
         val availableHeight = maxHeight
 
         if (items.isEmpty()) {
-            Text("Clipboard Empty", color = Color.Gray, fontSize = 12.sp)
+            Text(stringResource(R.string.smart_clipboard_empty), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(8.dp))
         } else {
             LazyColumn(
                 contentPadding = PaddingValues(vertical = 8.dp),
@@ -359,7 +343,9 @@ private fun ClipboardListContent(items: List<SmartClipboardEntity>, viewModel: S
                     .wrapContentHeight(Alignment.CenterVertically)
             ) {
                 items(items, key = { it.id }) { item ->
-                    ClipboardPreviewCard(item, { viewModel.startSmartClipboardDrag(hostView, item) }, { viewModel.copySmartClipboardItem(item) })
+                    SwipeToDeleteContainer(onDelete = { viewModel.deleteSmartClipboardItem(item) }) {
+                        ClipboardPreviewCard(item, viewModel, hostView)
+                    }
                 }
             }
         }
@@ -367,45 +353,141 @@ private fun ClipboardListContent(items: List<SmartClipboardEntity>, viewModel: S
 }
 
 @Composable
-private fun ClipboardPreviewCard(item: SmartClipboardEntity, onLongPress: () -> Boolean, onClick: () -> Unit) {
-    val imageBitmap by produceState<ImageBitmap?>(null, item.imagePath) {
-        value = withContext(Dispatchers.IO) {
-            item.imagePath?.let { path ->
-                val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
-                BitmapFactory.decodeFile(path, opts)?.asImageBitmap()
-            }
-        }
-    }
-
+private fun SwipeToDeleteContainer(onDelete: () -> Unit, content: @Composable () -> Unit) {
+    var offsetX by remember { mutableFloatStateOf(0f) }
     Box(
         modifier = Modifier
-            .fillMaxWidth(0.95f)
-            .heightIn(min = 65.dp, max = 90.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color.White.copy(alpha = 0.08f))
-            .pointerInput(Unit) { detectTapGestures(onLongPress = { onLongPress() }) }
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        if (item.type == SmartClipboardEntity.TYPE_IMAGE && imageBitmap != null) {
-            Image(bitmap = imageBitmap!!, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        } else {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(8.dp)) {
-                Icon(
-                    painterResource(if (item.type == SmartClipboardEntity.TYPE_FILE) R.drawable.smart_clipboard_file_24 else R.drawable.smart_clipboard_text_24),
-                    null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(20.dp)
-                )
-                item.text?.let {
-                    Text(
-                        text = it,
-                        color = Color.White.copy(alpha = 0.9f),
-                        fontSize = 11.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
+            .fillMaxWidth()
+            .offset { IntOffset(offsetX.roundToInt(), 0) }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (offsetX < -300f) {
+                            onDelete()
+                        } else {
+                            offsetX = 0f
+                        }
+                    },
+                    onDragCancel = { offsetX = 0f }
+                ) { change, dragAmount ->
+                    change.consume()
+                    offsetX = (offsetX + dragAmount).coerceAtMost(0f)
                 }
+            }
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun ClipboardPreviewCard(item: SmartClipboardEntity, viewModel: ServiceViewModel, hostView: android.view.View) {
+    val imageBitmap by produceState<ImageBitmap?>(null, item.imagePath, item.id) {
+        value = item.imagePath?.let { path ->
+            viewModel.loadPreviewBitmap(path, 320, 180)
+        }
+    }
+    val isFileMissing = (item.type == SmartClipboardEntity.TYPE_IMAGE || item.type == SmartClipboardEntity.TYPE_FILE) && item.imagePath != null && imageBitmap == null
+    if (isFileMissing && item.imagePath != null) {
+        LaunchedEffect(item.id, item.imagePath) {
+            kotlinx.coroutines.delay(500)
+            viewModel.deleteMissingPreview(item)
+        }
+    }
+    val timestamp = remember(item.createdAt) {
+        DateUtils.getRelativeTimeSpanString(item.createdAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
+    }
+    val titleText = when (item.type) {
+        SmartClipboardEntity.TYPE_TEXT -> item.text ?: ""
+        else -> item.fileName ?: item.mimeType ?: ""
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth(0.95f)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            .pointerInput(item.id) { detectTapGestures(onLongPress = { viewModel.startSmartClipboardDrag(hostView, item) }) }
+            .clickable { viewModel.copySmartClipboardItem(item) }
+            .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp, max = 90.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (item.type == SmartClipboardEntity.TYPE_IMAGE && imageBitmap != null) {
+                Image(bitmap = imageBitmap!!, contentDescription = stringResource(R.string.smart_clipboard_image_description), contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)))
+            } else {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(4.dp)) {
+                    Icon(
+                        painterResource(if (item.type == SmartClipboardEntity.TYPE_FILE) R.drawable.smart_clipboard_file_24 else R.drawable.smart_clipboard_text_24),
+                        null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)
+                    )
+                    if (titleText.isNotBlank()) {
+                        Text(
+                            text = if (isFileMissing) stringResource(R.string.smart_clipboard_missing_file) else titleText,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                            fontSize = 11.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            }
+            if (item.isPinned) {
+                Icon(
+                    painterResource(R.drawable.smart_clipboard_pin_24),
+                    contentDescription = stringResource(R.string.smart_clipboard_pin_description),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.align(Alignment.TopEnd).size(16.dp)
+                )
+            }
+        }
+        Text(
+            text = timestamp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            fontSize = 10.sp,
+            maxLines = 1,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { viewModel.toggleSmartClipboardItemPinned(item) }, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    painterResource(R.drawable.smart_clipboard_pin_24),
+                    contentDescription = if (item.isPinned) stringResource(R.string.smart_clipboard_unpin_description) else stringResource(R.string.smart_clipboard_pin_description),
+                    tint = if (item.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            IconButton(onClick = { viewModel.copySmartClipboardItem(item) }, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    painterResource(R.drawable.smart_clipboard_copy_24),
+                    contentDescription = stringResource(R.string.smart_clipboard_copy_description),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            IconButton(onClick = { viewModel.shareSmartClipboardItem(item) }, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    painterResource(R.drawable.smart_clipboard_share_24),
+                    contentDescription = stringResource(R.string.smart_clipboard_share_description),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            IconButton(onClick = { viewModel.deleteSmartClipboardItem(item) }, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    painterResource(R.drawable.smart_clipboard_delete_24),
+                    contentDescription = stringResource(R.string.smart_clipboard_delete_description),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }

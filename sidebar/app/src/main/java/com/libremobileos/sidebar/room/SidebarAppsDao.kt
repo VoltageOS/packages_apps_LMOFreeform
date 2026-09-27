@@ -15,10 +15,10 @@ import kotlinx.coroutines.flow.Flow
 interface SidebarAppsDao {
 
     @Query("INSERT INTO SidebarAppsEntity(packageName, activityName, userId) VALUES(:packageName, :activityName, :userId)")
-    fun insert(packageName: String, activityName: String, userId: Int)
+    suspend fun insert(packageName: String, activityName: String, userId: Int)
 
     @Query("DELETE FROM SidebarAppsEntity WHERE packageName = :packageName and activityName = :activityName and userId = :userId")
-    fun delete(packageName: String, activityName: String, userId: Int)
+    suspend fun delete(packageName: String, activityName: String, userId: Int)
 
     @Query("SELECT * FROM SidebarAppsEntity")
     fun getAll() : LiveData<List<SidebarAppsEntity>?>
@@ -30,17 +30,17 @@ interface SidebarAppsDao {
     fun getAllName() : LiveData<List<String>?>
 
     @Query("SELECT * FROM SidebarAppsEntity")
-    fun getAllWithoutLiveData() : List<SidebarAppsEntity>?
+    suspend fun getAllWithoutLiveData() : List<SidebarAppsEntity>?
 
     @Query("SELECT COUNT(*) FROM SidebarAppsEntity")
-    fun getCount(): Int
+    suspend fun getCount(): Int
 
     @Query("DELETE FROM SidebarAppsEntity")
-    fun deleteAll()
+    suspend fun deleteAll()
 
     @Delete
-    fun deleteList(sidebarAppsEntityList: List<SidebarAppsEntity>)
+    suspend fun deleteList(sidebarAppsEntityList: List<SidebarAppsEntity>)
 
     @Update
-    fun update(entity: SidebarAppsEntity)
+    suspend fun update(entity: SidebarAppsEntity)
 }

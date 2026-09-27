@@ -24,20 +24,7 @@ abstract class MyDatabase : RoomDatabase() {
     companion object {
         private val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("DROP TABLE IF EXISTS `SmartClipboardEntity`")
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS `SmartClipboardEntity` (" +
-                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
-                        "`type` TEXT NOT NULL, " +
-                        "`text` TEXT, " +
-                        "`fileName` TEXT, " +
-                        "`imagePath` TEXT, " +
-                        "`mimeType` TEXT, " +
-                        "`contentHash` TEXT NOT NULL, " +
-                        "`createdAt` INTEGER NOT NULL, " +
-                        "`isPinned` INTEGER NOT NULL" +
-                    ")"
-                )
+                db.execSQL("ALTER TABLE SmartClipboardEntity ADD COLUMN fileName TEXT")
             }
         }
         private val MIGRATION_5_6 = object : Migration(5, 6) {
@@ -67,7 +54,7 @@ abstract class MyDatabase : RoomDatabase() {
             if (database == null) {
                 database = Room.databaseBuilder(context.applicationContext, MyDatabase::class.java, "database.db")
                     .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
-                    .allowMainThreadQueries()
+                    .fallbackToDestructiveMigration()
                     .setQueryExecutor(Executors.newSingleThreadExecutor())
                     .setTransactionExecutor(Executors.newSingleThreadExecutor())
                     .build()
