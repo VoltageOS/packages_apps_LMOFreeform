@@ -69,7 +69,8 @@
             </intent-filter>
         </activity>
 
-        <service android:name=".service.SidebarService"/>
+        <service android:name=".service.SidebarService"
+            android:exported="true"/>
 
         <provider
             android:name="androidx.core.content.FileProvider"

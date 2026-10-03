@@ -90,6 +90,8 @@ class SidebarService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         const val SIDELINE_POSITION_Y_LANDSCAPE = "sideline_position_y_landscape"
         const val ACTION_IMPORT_TO_SMART_CLIPBOARD =
             "com.libremobileos.sidebar.action.IMPORT_TO_SMART_CLIPBOARD"
+        const val ACTION_SHOW_SIDEBAR =
+            "com.libremobileos.sidebar.action.SHOW_SIDEBAR"
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -137,6 +139,14 @@ class SidebarService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 enableIfNeeded = true,
                 showToast = true
             )
+        }
+        if (intent?.action == ACTION_SHOW_SIDEBAR) {
+            if (!sharedPrefs.getBoolean(SIDELINE, false)) {
+                sharedPrefs.edit().putBoolean(SIDELINE, true).apply()
+            }
+            handler.post {
+                showSidebar()
+            }
         }
         return START_STICKY
     }
