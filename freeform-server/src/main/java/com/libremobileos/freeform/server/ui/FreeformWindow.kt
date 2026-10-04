@@ -228,9 +228,6 @@ class FreeformWindow(
         animator.start()
     }
 
-    fun isNearNavbar(rawY: Float): Boolean =
-        rawY >= defaultDisplayHeight - dpToPx(NAVBAR_ZONE_DP)
-
     fun setResizeHighlight(active: Boolean) {
         val bg = if (active) 0x44FFFFFF else Color.TRANSPARENT
         leftScaleView?.setBackgroundColor(bg)
@@ -337,7 +334,6 @@ class FreeformWindow(
         private const val CHROME_TOUCH_EXTRA_DP = 12
         private const val BUBBLE_DP = 72
         private const val CARD_RADIUS_DP = 16
-        private const val NAVBAR_ZONE_DP = 120
         private const val RESIZE_BOUNCE_DUR = 280L
     }
 
@@ -727,11 +723,6 @@ class FreeformWindow(
         val topBarMoveListener = MoveTouchListener(this)
         val maximizeListener = MaximizeClickListener(this)
         val topBarTapDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDoubleTap(e: MotionEvent): Boolean {
-                handler.post { maximizeListener.onClick(topBarView) }
-                return true
-            }
-
             override fun onLongPress(e: MotionEvent) {
                 handler.post { handleHangUp() }
             }

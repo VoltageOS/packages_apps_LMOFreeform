@@ -21,8 +21,6 @@ class MoveTouchListener(
     private var downRawY = 0f
     private var startWinX = 0
     private var startWinY = 0
-    private var dragged = false
-    private val slop by lazy { ViewConfiguration.get(window.context).scaledTouchSlop }
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(v: View, event: MotionEvent): Boolean {
         when (event.actionMasked) {
@@ -32,24 +30,15 @@ class MoveTouchListener(
                 downRawY = event.rawY
                 startWinX = window.windowParams.x
                 startWinY = window.windowParams.y
-                dragged = false
             }
             MotionEvent.ACTION_MOVE -> {
-                if (!dragged && (abs(event.rawX - downRawX) > slop ||
-                            abs(event.rawY - downRawY) > slop)) dragged = true
                 window.requestMove(
                     (startWinX + event.rawX - downRawX).roundToInt(),
                     (startWinY + event.rawY - downRawY).roundToInt()
                 )
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (event.actionMasked == MotionEvent.ACTION_UP && dragged &&
-                        window.isNearNavbar(event.rawY)) {
-                    MaximizeClickListener(window).onClick(v)
-                } else {
-                    window.makeSureFreeformInScreen()
-                }
-                dragged = false
+                window.makeSureFreeformInScreen()
             }
         }
         return true
