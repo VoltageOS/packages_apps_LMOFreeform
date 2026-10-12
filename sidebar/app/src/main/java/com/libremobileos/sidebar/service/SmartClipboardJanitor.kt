@@ -38,7 +38,7 @@ class SmartClipboardJanitor(
         val due = nextDueAt()
         val pi = pendingIntent()
         if (due == null) {
-            am.cancel(pi)
+            runCatching { am.cancel(pi) }
             return
         }
         runCatching {

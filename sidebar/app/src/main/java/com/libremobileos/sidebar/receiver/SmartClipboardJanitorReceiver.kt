@@ -7,6 +7,7 @@ import com.libremobileos.sidebar.service.SmartClipboardJanitor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 class SmartClipboardJanitorReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -14,9 +15,11 @@ class SmartClipboardJanitorReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val janitor = SmartClipboardJanitor.create(context)
-                janitor.sweep()
-                janitor.schedule()
+                withTimeoutOrNull(8000L) {
+                    val janitor = SmartClipboardJanitor.create(context)
+                    janitor.sweep()
+                    janitor.schedule()
+                }
             } finally {
                 pending.finish()
             }
