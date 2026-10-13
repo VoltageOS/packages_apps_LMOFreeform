@@ -50,7 +50,7 @@ public class LMOFreeformServiceHolder {
 
     public static void createDisplay(FreeformConfig freeformConfig, AppConfig appConfig, Surface surface, ILMOFreeformDisplayCallback callback) {
         String displayName;
-        displayName = appConfig.getPackageName() + "," + appConfig.getActivityName() + "," + appConfig.getUserId();
+        displayName = appConfig.freeformId();
         lmoFreeformService.createFreeform(
                 displayName,
                 callback,
@@ -79,18 +79,6 @@ public class LMOFreeformServiceHolder {
             intent.setAction(Intent.ACTION_MAIN);
             intent.addCategory(Intent.CATEGORY_LAUNCHER);
             context.startActivityAsUser(intent, activityOptions.toBundle(), user);
-            return true;
-        } catch (Exception e) {
-            Slog.w(TAG, "startApp explicit component failed, trying launcher intent", e);
-        }
-        try {
-            Intent launch = context.getPackageManager().getLaunchIntentForPackage(appConfig.getPackageName());
-            if (launch == null) {
-                Slog.e(TAG, "startApp failed: no launch intent for " + appConfig.getPackageName());
-                return false;
-            }
-            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            context.startActivityAsUser(launch, activityOptions.toBundle(), user);
             return true;
         } catch (Exception e) {
             Slog.e(TAG, "startApp failed", e);
@@ -155,9 +143,12 @@ public class LMOFreeformServiceHolder {
         );
         try {
             lmoFreeformService.injectInputEvent(down, displayId);
+        } catch (Exception ignored) {
+            return;
+        }
+        try {
             lmoFreeformService.injectInputEvent(up, displayId);
         } catch (Exception ignored) {
-
         }
     }
 

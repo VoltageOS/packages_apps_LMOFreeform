@@ -30,53 +30,44 @@ class StartFreeformReceiver : BroadcastReceiver() {
         private const val TAG = "StartFreeformReceiver"
         private const val PACKAGE_NAME = "com.libremobileos.sidebar"
         private const val ACTION = "com.libremobileos.freeform.START_FREEFORM"
-        private const val SAVE_ACTION = "com.libremobileos.freeform.SAVE_GEOMETRY"
-        private const val INITIAL_MAX_WIDTH = 1080
-        private const val INITIAL_MAX_HEIGHT = 1560
         private const val GEOMETRY_PREFS = "freeform_geometry"
 
-        fun getSavedGeometry(context: Context, packageName: String, activityName: String): Pair<Int, Int>? {
+        fun getSavedGeometry(context: Context, userId: Int, packageName: String, activityName: String, screenW: Int, screenH: Int, portrait: Boolean): Pair<Int, Int>? {
             val sp = context.getSharedPreferences(GEOMETRY_PREFS, Context.MODE_PRIVATE)
-            val w = sp.getInt("$packageName/$activityName/w", -1)
-            val h = sp.getInt("$packageName/$activityName/h", -1)
-            return if (w > 0 && h > 0) w to h else null
+            val key = "$userId/$packageName/$activityName"
+            if (sp.getInt("$key/o", -1) != (if (portrait) 0 else 1)) return null
+            val w = (sp.getFloat("$key/wf", -1f) * screenW).roundToInt()
+            val h = (sp.getFloat("$key/hf", -1f) * screenH).roundToInt()
+            return if (w >= 100 && h >= 100) w to h else null
         }
 
-        fun saveGeometryForApp(context: Context, packageName: String, activityName: String, w: Int, h: Int) {
+        fun saveGeometryForApp(context: Context, userId: Int, packageName: String, activityName: String, wf: Float, hf: Float, orientation: Int) {
+            if (wf <= 0f || hf <= 0f || wf > 1f || hf > 1f) return
+            if (orientation != 0 && orientation != 1) return
+            val key = "$userId/$packageName/$activityName"
             context.getSharedPreferences(GEOMETRY_PREFS, Context.MODE_PRIVATE).edit()
-                .putInt("$packageName/$activityName/w", w)
-                .putInt("$packageName/$activityName/h", h)
+                .putFloat("$key/wf", wf)
+                .putFloat("$key/hf", hf)
+                .putInt("$key/o", orientation)
+                .remove("$key/w")
+                .remove("$key/h")
                 .apply()
         }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        when (intent.action) {
-            SAVE_ACTION -> {
-                val packageName = intent.getStringExtra("packageName")
-                val activityName = intent.getStringExtra("activityName")
-                val w = intent.getIntExtra("width", -1)
-                val h = intent.getIntExtra("height", -1)
-                if (packageName != null && activityName != null && w > 0 && h > 0) {
-                    logger.d("saved geometry $packageName/$activityName ${w}x$h")
-                    saveGeometryForApp(context, packageName, activityName, w, h)
-                }
-                return
-            }
-            ACTION -> {
-            val isNativeFreeformEnabled = Settings.System.getInt(
-                context.contentResolver,
-                "freeform_launch_mode",
-                1
-            ) == 0
-            val isSideBarBroadcast = 
-                intent.getStringExtra("packageName").equals(PACKAGE_NAME)
-            if (isNativeFreeformEnabled && !isSideBarBroadcast) {
-                launchAppInNativeFreeform(context, intent)
-            } else {
-                launchAppInLMOFreeform(context, intent)
-            }
-            }
+        if (intent.action != ACTION) return
+        val isNativeFreeformEnabled = Settings.System.getInt(
+            context.contentResolver,
+            "freeform_launch_mode",
+            1
+        ) == 0
+        val isSideBarBroadcast =
+            intent.getStringExtra("packageName").equals(PACKAGE_NAME)
+        if (isNativeFreeformEnabled && !isSideBarBroadcast) {
+            launchAppInNativeFreeform(context, intent)
+        } else {
+            launchAppInLMOFreeform(context, intent)
         }
     }
 
@@ -92,13 +83,12 @@ class StartFreeformReceiver : BroadcastReceiver() {
             val screenWidth = context.resources.displayMetrics.widthPixels
             val screenHeight = context.resources.displayMetrics.heightPixels
             val screenDensityDpi = context.resources.displayMetrics.densityDpi
-            val saved = getSavedGeometry(context, packageName, activityName)
-            val freeformWidth = (saved?.first
-                ?: sp.getInt("freeform_width", (screenWidth * 0.85).roundToInt()))
-                .coerceAtMost(INITIAL_MAX_WIDTH)
-            val freeformHeight = (saved?.second
-                ?: sp.getInt("freeform_height", (screenHeight * 0.6).roundToInt()))
-                .coerceAtMost(INITIAL_MAX_HEIGHT)
+            val portrait = screenHeight >= screenWidth
+            val saved = getSavedGeometry(context, userId, packageName, activityName, screenWidth, screenHeight, portrait)
+            val freeformWidth = saved?.first
+                ?: sp.getInt("freeform_width", (screenWidth * 0.8).roundToInt())
+            val freeformHeight = saved?.second
+                ?: sp.getInt("freeform_height", (screenHeight * 0.6).roundToInt())
             LMOFreeformServiceManager.createWindow(
                 packageName,
                 activityName,

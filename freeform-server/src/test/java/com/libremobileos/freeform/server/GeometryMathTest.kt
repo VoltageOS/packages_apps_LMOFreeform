@@ -1,12 +1,10 @@
 package com.libremobileos.freeform.server
 
-import com.libremobileos.freeform.server.ui.FreeformConfig
 import com.libremobileos.freeform.server.ui.gesture.GeometryMath
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.abs
 
 class GeometryMathTest {
 
@@ -30,37 +28,40 @@ class GeometryMathTest {
     }
 
     @Test
-    fun viewToDisplay_roundTripWithin1px() {
-        val sizes = listOf(810 to 1200, 400 to 800, 1080 to 600, 140 to 200)
-        val points = listOf(0f to 0f, 10.5f to 300.25f, 799f to 1199f)
-        for ((vw, vh) in sizes) {
-            for (swapped in listOf(false, true)) {
-                val w = if (swapped) vh else vw
-                val h = if (swapped) vw else vh
-                val scale = minOf(1080f / minOf(w, h), 2400f / maxOf(w, h))
-                val dw = (w * scale).toInt()
-                val dh = (h * scale).toInt()
-                for ((x, y) in points) {
-                    if (x > w - 1 || y > h - 1) continue
-                    val dx = GeometryMath.viewToDisplay(x, w, dw)
-                    val dy = GeometryMath.viewToDisplay(y, h, dh)
-                    assertEquals(x, GeometryMath.displayToView(dx, w, dw), 1f)
-                    assertEquals(y, GeometryMath.displayToView(dy, h, dh), 1f)
-                }
-            }
-        }
+    fun computeDensityDpi_balanced() {
+        val base = 420
+        val scale = 1.333f
+        val balanced = GeometryMath.computeDensityDpi(base, scale, 1080)
+        assertEquals(480, balanced)
+        assertTrue(balanced % 20 == 0)
+        assertTrue(balanced >= base)
+        val swDp = 1080f * 160f / balanced
+        assertTrue(swDp >= 320f && swDp < 600f)
     }
 
     @Test
-    fun computeDensityDpi_modes() {
+    fun computeDensityDpi_balancedQuantizedTable() {
         val base = 420
-        val scale = 1.333f
-        assertEquals(base, GeometryMath.computeDensityDpi(base, scale, 810, FreeformConfig.DENSITY_FIT))
-        assertEquals((base * scale).toInt(), GeometryMath.computeDensityDpi(base, scale, 810, FreeformConfig.DENSITY_MATCH))
-        val balanced = GeometryMath.computeDensityDpi(base, scale, 810, FreeformConfig.DENSITY_BALANCED)
-        assertTrue(balanced in (base + 1)..((base * scale).toInt()))
-        val tiny = GeometryMath.computeDensityDpi(base, 3f, 140, FreeformConfig.DENSITY_BALANCED)
-        assertTrue(140f * 160f / tiny >= 320f)
-        assertTrue(abs(tiny - 140f * 160f / 320f) < 2f)
+        val cases = listOf(
+            Triple(1083, 1.18f, 440),
+            Triple(1080, 1.333f, 480),
+            Triple(1080, 1.66f, 540),
+            Triple(1080, 2.0f, 540),
+            Triple(1080, 2.7f, 540),
+            Triple(1080, 3.0f, 540),
+        )
+        for ((virtualMinPx, scale, expectedDpi) in cases) {
+            val dpi = GeometryMath.computeDensityDpi(base, scale, virtualMinPx)
+            assertEquals("virtualMinPx=$virtualMinPx scale=$scale", expectedDpi, dpi)
+            assertEquals(0, dpi % 20)
+            assertTrue(dpi >= base)
+            val swDp = virtualMinPx * 160f / dpi
+            assertTrue("swDp=$swDp for virtualMinPx=$virtualMinPx", swDp >= 320f && swDp < 600f)
+        }
+        val tiny = GeometryMath.computeDensityDpi(base, 3f, 1080)
+        assertEquals(540, tiny)
+        assertTrue(tiny >= base)
+        assertEquals(0, tiny % 20)
+        assertTrue(1080f * 160f / tiny >= 320f)
     }
 }

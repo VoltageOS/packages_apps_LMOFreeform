@@ -226,6 +226,7 @@
             android:elevation="6dp"
             android:scaleType="centerCrop"
             android:background="@drawable/bubble_bg"
+            android:contentDescription="@string/freeform_bubble"
             android:padding="12dp"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"

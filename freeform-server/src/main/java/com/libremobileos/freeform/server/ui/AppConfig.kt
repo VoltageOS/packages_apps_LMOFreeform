@@ -9,4 +9,6 @@ data class AppConfig(
     val pendingIntent: PendingIntent?,
     val userId: Int,
     val taskId: Int
-)
+) {
+    fun freeformId(): String = "$packageName,$activityName,$userId"
+}

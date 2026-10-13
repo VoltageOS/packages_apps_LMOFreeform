@@ -79,22 +79,36 @@ public class LMOFreeformDisplayAdapter extends DisplayAdapter {
             mFreeformDisplayDevices.put(appToken, device);
             lmoFreeformDisplayCallbackArrayMap.put(device, callback);
 
-            mHandler.postDelayed(() -> {
-                try {
+            final int[] attempts = new int[]{0};
+            final Runnable lookup = new Runnable() {
+                @Override
+                public void run() {
                     LogicalDisplay display;
                     synchronized (getSyncRoot()) {
                         display = mLogicalDisplayMapper.getDisplayLocked(device);
                     }
                     Slog.i(TAG, "findLogicalDisplayForDevice " + display);
                     if (display == null) {
-                        Slog.w(TAG, "no LogicalDisplay yet for " + device);
+                        if (++attempts[0] < 5) {
+                            mHandler.postDelayed(this, 200);
+                        } else {
+                            Slog.w(TAG, "no LogicalDisplay for " + device + ", giving up");
+                            try {
+                                callback.onDisplayAdd(Display.INVALID_DISPLAY);
+                            } catch (Exception e) {
+                                Slog.w(TAG, "onDisplayAdd callback failed", e);
+                            }
+                        }
                         return;
                     }
-                    callback.onDisplayAdd(display.getDisplayIdLocked());
-                } catch (Exception e) {
-                    Slog.w(TAG, "onDisplayAdd callback failed", e);
+                    try {
+                        callback.onDisplayAdd(display.getDisplayIdLocked());
+                    } catch (Exception e) {
+                        Slog.w(TAG, "onDisplayAdd callback failed", e);
+                    }
                 }
-            }, 500);
+            };
+            mHandler.postDelayed(lookup, 200);
 
             try {
                 appToken.linkToDeath(device, 0);

@@ -19,17 +19,19 @@ public class FreeformWindowManager {
             Handler handler, Context context,
             String packageName, String activityName, int userId, int taskId,
             PendingIntent pendingIntent, int width, int height, int densityDpi) {
-        String freeformId = packageName + "," + activityName + "," + userId;
+        AppConfig appConfig = new AppConfig(packageName, activityName, pendingIntent, userId, taskId);
+        String freeformId = appConfig.freeformId();
         FreeformWindow oldWindow = freeformWindows.get(freeformId);
         if (oldWindow != null) {
             runCatchingOldWindow(oldWindow);
         }
-        AppConfig appConfig = new AppConfig(packageName, activityName, pendingIntent, userId, taskId);
         FreeformConfig freeformConfig = new FreeformConfig(width, height, densityDpi);
         FreeformWindow window = new FreeformWindow(handler, context, appConfig, freeformConfig);
         dlog(TAG, "addWindow: " + packageName + "/" + activityName + ", freeformId=" + window.getFreeformId()
                 + ", existing freeformWindows=" + freeformWindows);
-        freeformWindows.put(window.getFreeformId(), window);
+        if (!window.isDestroyed()) {
+            freeformWindows.put(window.getFreeformId(), window);
+        }
     }
 
     private static void runCatchingOldWindow(FreeformWindow oldWindow) {
@@ -70,5 +72,9 @@ public class FreeformWindowManager {
 
     public static void removeWindow(String freeformId) {
         removeWindow(freeformId, false /*close*/);
+    }
+
+    public static void removeWindow(String freeformId, FreeformWindow window) {
+        freeformWindows.remove(freeformId, window);
     }
 }

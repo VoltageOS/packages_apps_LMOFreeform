@@ -1,7 +1,6 @@
 package com.libremobileos.freeform.server.ui
 
 import android.annotation.SuppressLint
-import android.os.Build
 import android.util.Slog
 import android.view.Display
 import android.view.GestureDetector.SimpleOnGestureListener
@@ -129,11 +128,11 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
                     (startW + if (useHorizontal) dxRaw.roundToInt() else 0) to
                     (startH + if (useVertical) dyRaw.roundToInt() else 0)
                 }
-                window.requestResize(w, h)
+                val (appliedW, appliedH) = window.requestResize(w, h)
                 if (shiftX != 0f || shiftY != 0f) {
                     window.requestMove(
-                        (startWinX + shiftX * (w - startW)).roundToInt(),
-                        (startWinY + shiftY * (h - startH)).roundToInt()
+                        (startWinX + shiftX * (appliedW - startW)).roundToInt(),
+                        (startWinY + shiftY * (appliedH - startH)).roundToInt()
                     )
                 }
             }

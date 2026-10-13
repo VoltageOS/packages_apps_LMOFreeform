@@ -121,6 +121,16 @@ public class LMOFreeformUIService extends ILMOFreeformUIService.Stub {
 
     @Override
     public void dump(java.io.FileDescriptor fd, java.io.PrintWriter pw, String[] args) {
+        if (systemContext == null) {
+            pw.println("lmo_freeform dump failed: no context");
+            return;
+        }
+        if (systemContext.checkCallingOrSelfPermission(android.Manifest.permission.DUMP)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            pw.println("Permission Denial: can't dump lmo_freeform from pid="
+                    + Binder.getCallingPid() + ", uid=" + Binder.getCallingUid());
+            return;
+        }
         try {
             FreeformWindowManager.dumpLocked(pw);
         } catch (Exception e) {

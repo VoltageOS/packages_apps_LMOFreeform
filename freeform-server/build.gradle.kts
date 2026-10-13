@@ -31,6 +31,7 @@ dependencies {
     implementation(projects.service)
     implementation(libs.hiddenapirefineruntime)
     compileOnly(projects.hiddenApi)
+    testImplementation(libs.junit)
 }
 
 zygote {

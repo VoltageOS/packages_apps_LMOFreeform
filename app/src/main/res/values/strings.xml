@@ -4,4 +4,5 @@
     <string name="freeform_fullscreen">Fullscreen</string>
     <string name="freeform_minimize">Minimize</string>
     <string name="freeform_close">Close</string>
+    <string name="freeform_bubble">Minimized app</string>
 </resources>

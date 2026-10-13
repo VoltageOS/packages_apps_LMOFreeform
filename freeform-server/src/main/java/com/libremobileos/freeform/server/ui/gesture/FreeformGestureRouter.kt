@@ -1,8 +1,8 @@
 package com.libremobileos.freeform.server.ui.gesture
 
 import android.content.Context
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
-import android.view.View
 import android.view.ViewConfiguration
 import com.libremobileos.freeform.server.Debug.dlog
 import kotlin.math.abs
@@ -55,7 +55,7 @@ class FreeformGestureRouter(
         }
     }
 
-    fun onSurfaceTouch(view: View, event: MotionEvent): Boolean {
+    fun onSurfaceTouch(event: MotionEvent): Boolean {
         if (!callbacks.isAlive()) return true
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -90,7 +90,7 @@ class FreeformGestureRouter(
                             dlog(TAG, "edge: back fired")
                             clearBuffered()
                             callbacks.fireBack()
-                            callbacks.haptic(HAPTIC_GESTURE_END)
+                            callbacks.haptic(HapticFeedbackConstants.GESTURE_END)
                             mode = Mode.CONSUMED
                         }
                         max(abs(dx), dy) > slop -> {
@@ -104,7 +104,7 @@ class FreeformGestureRouter(
                     }
                 }
                 Mode.FORWARDING -> callbacks.forward(event)
-                Mode.IDLE -> callbacks.forward(event)
+                Mode.IDLE -> {}
                 Mode.CONSUMED -> {}
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -113,13 +113,16 @@ class FreeformGestureRouter(
                         if (event.actionMasked == MotionEvent.ACTION_UP) flushBuffered(event)
                         else clearBuffered()
                     }
-                    Mode.FORWARDING, Mode.IDLE -> callbacks.forward(event)
-                    Mode.CONSUMED -> {}
+                    Mode.FORWARDING -> callbacks.forward(event)
+                    Mode.IDLE, Mode.CONSUMED -> {}
                 }
                 clearBuffered()
                 mode = Mode.IDLE
                 edge = Edge.NONE
             }
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_POINTER_UP ->
+                if (mode == Mode.PENDING_EDGE) flushBuffered(event)
+                else if (mode == Mode.FORWARDING) callbacks.forward(event)
             else -> if (mode == Mode.FORWARDING) callbacks.forward(event)
         }
         return true
@@ -153,6 +156,5 @@ class FreeformGestureRouter(
         private const val TRIGGER_FRACTION = 0.12f
         private const val BACK_DY_RATIO = 0.75f
         private const val DIRECTION_RATIO = 1.5f
-        const val HAPTIC_GESTURE_END = 13
     }
 }
