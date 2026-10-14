@@ -14,6 +14,7 @@
     <uses-permission android:name="android.permission.ACCESS_HIDDEN_PROFILES"/>
     <uses-permission android:name="android.permission.ACCESS_HIDDEN_PROFILES_FULL"/>
     <uses-permission android:name="android.permission.READ_CLIPBOARD_IN_BACKGROUND"/>
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
 
     <application
         android:name=".app.SidebarApplication"

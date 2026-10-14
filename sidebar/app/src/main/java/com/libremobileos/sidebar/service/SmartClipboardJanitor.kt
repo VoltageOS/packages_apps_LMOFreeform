@@ -42,7 +42,11 @@ class SmartClipboardJanitor(
             return
         }
         runCatching {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, due, pi)
+            if (am.canScheduleExactAlarms()) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, due, pi)
+            } else {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, due, pi)
+            }
         }.onFailure {
             runCatching {
                 am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, due, pi)

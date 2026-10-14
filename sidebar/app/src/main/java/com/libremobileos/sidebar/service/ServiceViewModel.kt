@@ -698,7 +698,17 @@ class ServiceViewModel(private val application: Application): AndroidViewModel(a
             janitor.schedule()
             repository.getRecentSmartClipboardItemsByFlow(MAX_SMART_CLIPBOARD_ITEMS)
                 .combine(_smartClipboardEnabled) { items, enabled ->
-                    if (enabled) items else emptyList()
+                    if (!enabled) {
+                        emptyList()
+                    } else {
+                        val retentionMs = SmartClipboardJanitor.retentionMs(sharedPrefs)
+                        if (retentionMs <= 0) {
+                            items
+                        } else {
+                            val cutoff = System.currentTimeMillis() - retentionMs
+                            items.filter { it.isPinned || it.createdAt >= cutoff }
+                        }
+                    }
                 }
                 .collect { items ->
                     _smartClipboardItems.value = items
